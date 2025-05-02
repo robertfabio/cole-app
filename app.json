@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "cole-app",
+    "name": "Cole",
     "slug": "cole-app",
-    "version": "1.0.0",
+    "version": "0.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#2D3047"
     },
     "ios": {
       "supportsTablet": true
@@ -18,12 +18,14 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#2D3047"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.coleapp.studytimer"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "description": "Seu aplicativo de estudo"
   }
 }

@@ -20,15 +20,6 @@ Um aplicativo móvel Android para cronometrar e acompanhar meu tempo de estudo.
 - React Native Paper (Interface de usuário)
 - AsyncStorage para persistência de dados
 
-## Como Executar
-
-### Pré-requisitos
-
-- Node.js
-- npm ou yarn
-- Expo CLI
-- Android Studio (para emulador) ou dispositivo Android físico
-
 cole-app/
 ├── assets/             # Imagens e recursos visuais
 ├── src/

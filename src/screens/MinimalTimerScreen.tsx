@@ -1,21 +1,17 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Dimensions, StatusBar, TouchableOpacity } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
+import React, { useEffect, useCallback } from 'react';
+import { View, StyleSheet, Dimensions, TouchableOpacity, StatusBar } from 'react-native';
+import { Text, useTheme, IconButton } from 'react-native-paper';
 import { useTimer } from '../contexts/TimerContext';
-import { formatTime } from '../utils/timeFormat';
+import { formatTimeWithSeconds, formatPomodoroTime } from '../utils/timeFormat';
 import Animated, { 
+  FadeIn, 
   useAnimatedStyle, 
   useSharedValue, 
   withSpring, 
-  withTiming, 
-  withRepeat,
-  withSequence,
-  FadeIn,
-  FadeOut
+  withTiming 
 } from 'react-native-reanimated';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 
@@ -23,7 +19,7 @@ interface MinimalTimerScreenProps {
   onClose: () => void;
 }
 
-const MinimalTimerScreen: React.FC<MinimalTimerScreenProps> = ({ onClose }) => {
+const MinimalTimerScreen: React.FC<MinimalTimerScreenProps> = React.memo(({ onClose }) => {
   const {
     totalStudyTime,
     isRunning,
@@ -39,231 +35,195 @@ const MinimalTimerScreen: React.FC<MinimalTimerScreenProps> = ({ onClose }) => {
   
   // Animation values
   const scale = useSharedValue(1);
-  const opacity = useSharedValue(1);
-  const rotation = useSharedValue(0);
-  const pulseOpacity = useSharedValue(0.6);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const opacity = useSharedValue(0.8);
   
-  // Configurar orientação da tela para paisagem
+  // Configurar efeito de entrada
   useEffect(() => {
-    const setupOrientation = async () => {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-    };
-    
-    setupOrientation();
-    
-    return () => {
-      ScreenOrientation.unlockAsync();
-    };
+    opacity.value = withTiming(0.9, { duration: 500 });
+    scale.value = withSpring(1, { damping: 10, stiffness: 100 });
   }, []);
   
   // Animar o timer quando estiver rodando
   useEffect(() => {
     if (isRunning) {
-      scale.value = withSpring(1.05, { damping: 15, stiffness: 100 });
-      opacity.value = withTiming(1, { duration: 500 });
-      pulseOpacity.value = withRepeat(
-        withSequence(
-          withTiming(0.8, { duration: 1000 }),
-          withTiming(0.6, { duration: 1000 })
-        ),
-        -1, // Repetir infinitamente
-        true // Reverter
-      );
+      scale.value = withTiming(1.05, { duration: 300 });
+      opacity.value = withTiming(1, { duration: 300 });
     } else {
-      scale.value = withSpring(1, { damping: 15, stiffness: 100 });
-      opacity.value = withTiming(0.8, { duration: 500 });
-      pulseOpacity.value = 0.6;
+      scale.value = withTiming(1, { duration: 300 });
+      opacity.value = withTiming(0.9, { duration: 300 });
     }
   }, [isRunning]);
   
-  // Estilo animado para o timer
-  const timerAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
+  // Configurar gesto de arrastar
+  const panGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      translateX.value = e.translationX;
+      translateY.value = e.translationY;
+      // Aumentar opacidade ao arrastar
+      opacity.value = withTiming(1, { duration: 100 });
+    })
+    .onEnd((e) => {
+      // Verificar limites da tela
+      const maxX = width - 150;
+      const maxY = height - 150;
+      
+      // Calcular posição final com limites
+      const finalX = Math.min(Math.max(translateX.value, -width/2 + 75), maxX/2);
+      const finalY = Math.min(Math.max(translateY.value, -height/2 + 75 + insets.top), maxY/2 - insets.bottom);
+      
+      // Aplicar animação spring para a posição final
+      translateX.value = withSpring(finalX, { damping: 15 });
+      translateY.value = withSpring(finalY, { damping: 15 });
+      
+      // Reduzir opacidade após soltar
+      opacity.value = withTiming(0.9, { duration: 300 });
+    });
+  
+  // Estilo animado
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value }
+    ],
+    opacity: opacity.value
   }));
   
-  // Estilo animado para o pulso
-  const pulseAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: pulseOpacity.value,
-  }));
-  
-  // Formatar minutos e segundos do Pomodoro
-  const formatPomodoroTime = (ms: number) => {
-    const totalSeconds = Math.ceil(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
-  
-  // Formatar tempo para o timer padrão
-  const formatStandardTime = (ms: number) => {
-    if (ms < 0) {
-      return formatTime(Math.abs(ms));
+  // Formatação do tempo
+  const formatDisplayTime = useCallback(() => {
+    if (isPomodoroActive) {
+      return formatPomodoroTime(timeLeft);
     } else {
-      return formatTime(ms);
+      if (totalStudyTime < 0) {
+        return formatTimeWithSeconds(Math.abs(totalStudyTime));
+      } else {
+        return formatTimeWithSeconds(totalStudyTime);
+      }
     }
-  };
-  
-  // Obter título do modo do timer
-  const getTimerModeTitle = () => {
+  }, [isPomodoroActive, timeLeft, totalStudyTime]);
+
+  // Obter o título do modo
+  const getModeTitle = useCallback(() => {
+    if (!isPomodoroActive) return "Timer";
+    
     switch (timerMode) {
-      case 'focus':
-        return 'Foco';
-      case 'shortBreak':
-        return 'Pausa Curta';
-      case 'longBreak':
-        return 'Pausa Longa';
-      default:
-        return 'Foco';
+      case 'focus': return "Foco";
+      case 'shortBreak': return "Pausa";
+      case 'longBreak': return "Descanso";
+      default: return "Timer";
     }
-  };
-  
-  // Obter cor baseada no modo do timer
-  const getTimerModeColor = () => {
-    switch (timerMode) {
-      case 'focus':
-        return theme.colors.primary;
-      case 'shortBreak':
-        return theme.colors.tertiary;
-      case 'longBreak':
-        return theme.colors.secondary;
-      default:
-        return theme.colors.primary;
-    }
-  };
+  }, [isPomodoroActive, timerMode]);
   
   return (
-    <View style={[styles.container, { backgroundColor: 'rgba(0,0,0,0.85)' }]}>
-      <StatusBar hidden={true} />
+    <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" />
       
-      {/* Pulso de fundo */}
-      <Animated.View 
-        style={[styles.pulseBackground, pulseAnimatedStyle, { 
-          backgroundColor: getTimerModeColor(),
-        }]}
-      />
-      
-      {/* Conteúdo do Timer */}
-      <Animated.View 
-        style={[styles.timerContainer, timerAnimatedStyle]}
-        entering={FadeIn.duration(800)}
-        exiting={FadeOut.duration(300)}
-      >
-        {isPomodoroActive ? (
-          <View style={styles.pomodoroContainer}>
-            <Text style={[styles.modeTitle, { color: '#FFFFFF' }]}>
-              {getTimerModeTitle()}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View 
+          style={[
+            styles.floatingTimer, 
+            animatedStyle,
+            { 
+              backgroundColor: theme.colors.primary,
+              shadowColor: theme.colors.primary,
+            }
+          ]}
+          entering={FadeIn.duration(500)}
+        >
+          <View style={styles.headerRow}>
+            <Text style={[styles.modeTitle, { color: theme.colors.onPrimary }]}>
+              {getModeTitle()}
             </Text>
-            <Text style={[styles.timerText, { color: '#FFFFFF' }]}>
-              {formatPomodoroTime(timeLeft)}
-            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <IconButton 
+                icon="close" 
+                size={16} 
+                iconColor={theme.colors.onPrimary}
+              />
+            </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.standardContainer}>
-            <Text style={[styles.timerText, { color: '#FFFFFF' }]}>
-              {formatStandardTime(totalStudyTime)}
-            </Text>
+          
+          <Text style={[styles.timerText, { color: theme.colors.onPrimary }]}>
+            {formatDisplayTime()}
+          </Text>
+          
+          <View style={styles.controls}>
+            <IconButton
+              icon={isRunning ? "pause" : "play"}
+              iconColor={theme.colors.onPrimary}
+              size={24}
+              onPress={isRunning ? pauseTimer : startTimer}
+              style={[styles.controlButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+            />
+            <IconButton
+              icon="refresh"
+              iconColor={theme.colors.onPrimary}
+              size={24}
+              onPress={resetTimer}
+              style={[styles.controlButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+            />
           </View>
-        )}
-      </Animated.View>
-      
-      {/* Controles minimalistas */}
-      <View style={[styles.controls, { paddingBottom: insets.bottom + 10 }]}>
-        <TouchableOpacity 
-          style={styles.controlButton}
-          onPress={isRunning ? pauseTimer : startTimer}
-        >
-          <MaterialCommunityIcons 
-            name={isRunning ? "pause" : "play"} 
-            size={36} 
-            color="#FFFFFF" 
-          />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.controlButton}
-          onPress={resetTimer}
-        >
-          <MaterialCommunityIcons 
-            name="refresh" 
-            size={36} 
-            color="#FFFFFF" 
-          />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.controlButton}
-          onPress={onClose}
-        >
-          <MaterialCommunityIcons 
-            name="fullscreen-exit" 
-            size={36} 
-            color="#FFFFFF" 
-          />
-        </TouchableOpacity>
-      </View>
+        </Animated.View>
+      </GestureDetector>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  pulseBackground: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    borderRadius: 0,
-    opacity: 0.2,
-  },
-  timerContainer: {
+  floatingTimer: {
+    padding: 12,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 8,
+    width: 180,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
-  pomodoroContainer: {
-    alignItems: 'center',
-  },
-  standardContainer: {
+  headerRow: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   modeTitle: {
-    fontSize: 32,
+    fontSize: 14,
     fontWeight: 'bold',
-    marginBottom: 10,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 5,
+    marginLeft: 12,
+  },
+  closeButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 24,
+    height: 24,
+    marginRight: -4,
   },
   timerText: {
-    fontSize: 140,
-    fontWeight: '200', // Mais fino para um visual minimalista
+    fontSize: 28,
+    fontWeight: 'bold',
     fontVariant: ['tabular-nums'],
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 10,
-    letterSpacing: 2,
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+    marginVertical: 8,
   },
   controls: {
-    position: 'absolute',
-    bottom: 20,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    width: '100%',
   },
   controlButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    margin: 4,
+    borderRadius: 20,
   },
 });
 

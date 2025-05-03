@@ -1,475 +1,697 @@
-import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSettings } from './SettingsContext';
-import * as Animatable from 'react-native-animatable';
-import { useSharedValue, SharedValue } from 'react-native-reanimated';
+import { useSharedValue, SharedValue, withTiming } from 'react-native-reanimated';
 import { sendPomodoroNotification, sendStandardTimerNotification } from '../services/NotificationService';
+import { AppState, AppStateStatus } from 'react-native';
+import { Achievement, updateAchievements } from '../utils/achievementSystem';
 
-// Timer modes
+// Tipos
 export type TimerMode = 'focus' | 'shortBreak' | 'longBreak';
 
-// Define types for our context
-type TimerContextType = {
+export type StudySession = {
+  id: string;
+  name: string;
+  duration: number; // Duração em milissegundos
+  date: string;
+  tags?: string[];
+  category?: string;
+  isScheduledSession?: boolean;
+  scheduledSessionId?: string;
+};
+
+// Estado do timer
+interface TimerState {
   isRunning: boolean;
   startTime: number | null;
   pausedTime: number;
   totalStudyTime: number;
   studySessions: StudySession[];
-  startTimer: () => void;
-  pauseTimer: () => void;
-  resetTimer: () => void;
-  saveSession: (name: string) => void;
   timerMode: TimerMode;
   pomodoroCount: number;
-  switchTimerMode: (mode: TimerMode) => void;
-  progress: SharedValue<number>;
-  progressAnimation: SharedValue<number>;
-  timeLeft: number;
-  goalProgress: number;
   isPomodoroActive: boolean;
-  togglePomodoroTimer: () => void;
-  updateTimeDuration: (duration: number) => void;
+  timeLeft: number;
   customTimerDuration: number | null;
   isSaving: boolean;
-};
+  customDurations: Record<TimerMode, number | null>;
+  isZenModeActive: boolean;
+  zenModeStartTime: number | null;
+  zenModeAccumulatedTime: number;
+}
 
-export type StudySession = {
-  id: string;
-  name: string;
-  duration: number; // Duration in milliseconds
-  date: string;
-  tags?: string[];
-  category?: string;
-};
+// Para notificações de conquistas
+interface NewAchievementNotification {
+  achievement: Achievement;
+  xpEarned: number;
+}
 
-// Create the context with default values
-const TimerContext = createContext<TimerContextType | undefined>(undefined);
+// Ações para o reducer
+type TimerAction =
+  | { type: 'START_TIMER' }
+  | { type: 'PAUSE_TIMER' }
+  | { type: 'RESET_TIMER' }
+  | { type: 'SAVE_SESSION'; name: string }
+  | { type: 'SWITCH_MODE'; mode: TimerMode }
+  | { type: 'TOGGLE_POMODORO' }
+  | { type: 'UPDATE_TIME_DURATION'; duration: number }
+  | { type: 'UPDATE_TIME_LEFT'; remaining: number }
+  | { type: 'UPDATE_TOTAL_TIME'; time: number }
+  | { type: 'INCREMENT_POMODORO' }
+  | { type: 'SET_SAVING'; isSaving: boolean }
+  | { type: 'LOAD_STATE'; state: Partial<TimerState> }
+  | { type: 'TOGGLE_ZEN_MODE' }
+  | { type: 'UPDATE_ZEN_MODE_TIME'; time: number };
 
-// Storage keys
+// Chaves de armazenamento
 const STORAGE_KEYS = {
   TIMER_STATE: 'cole_timer_state',
   STUDY_SESSIONS: 'cole_study_sessions',
 };
 
-export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { settings } = useSettings();
-  const timerModeRef = useRef<TimerMode>('focus');
-  
-  const [isRunning, setIsRunning] = useState(false);
-  const [startTime, setStartTime] = useState<number | null>(null);
-  const [pausedTime, setPausedTime] = useState(0);
-  const [totalStudyTime, setTotalStudyTime] = useState(0);
-  const [studySessions, setStudySessions] = useState<StudySession[]>([]);
-  const [timerMode, setTimerMode] = useState<TimerMode>('focus');
-  const [pomodoroCount, setPomodoroCount] = useState(0);
-  const [isPomodoroActive, setIsPomodoroActive] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [isSaving, setIsSaving] = useState(false);
-  const [customTimerDuration, setCustomTimerDuration] = useState<number | null>(null);
-  
-  // Para armazenar durações personalizadas
-  const [customDurations, setCustomDurations] = useState<Record<TimerMode, number | null>>({
+// Estado inicial
+const initialState: TimerState = {
+  isRunning: false,
+  startTime: null,
+  pausedTime: 0,
+  totalStudyTime: 0,
+  studySessions: [],
+  timerMode: 'focus',
+  pomodoroCount: 0,
+  isPomodoroActive: false,
+  timeLeft: 0,
+  customTimerDuration: null,
+  isSaving: false,
+  customDurations: {
     focus: null,
     shortBreak: null,
     longBreak: null
-  });
+  },
+  isZenModeActive: false,
+  zenModeStartTime: null,
+  zenModeAccumulatedTime: 0
+};
+
+// Reducer para gerenciar o estado do timer
+function timerReducer(state: TimerState, action: TimerAction): TimerState {
+  switch (action.type) {
+    case 'START_TIMER':
+      return {
+        ...state,
+        isRunning: true,
+        startTime: Date.now()
+      };
+
+    case 'PAUSE_TIMER':
+      return {
+        ...state,
+        isRunning: false,
+        pausedTime: state.startTime 
+          ? state.pausedTime + (Date.now() - state.startTime) 
+          : state.pausedTime,
+        startTime: null
+      };
+
+    case 'RESET_TIMER':
+      return {
+        ...state,
+        isRunning: false,
+        startTime: null,
+        pausedTime: 0,
+        totalStudyTime: state.customTimerDuration ? -state.customTimerDuration : 0,
+      };
+
+    case 'SAVE_SESSION':
+      if (state.totalStudyTime <= 0) return state;
+      
+      const newSession: StudySession = {
+        id: Date.now().toString(),
+        name: action.name || "Sessão de Estudo",
+        duration: Math.abs(state.totalStudyTime),
+        date: new Date().toISOString(),
+      };
+      
+      return {
+        ...state,
+        studySessions: [newSession, ...state.studySessions],
+        isRunning: false,
+        startTime: null,
+        pausedTime: 0,
+        totalStudyTime: 0,
+        customTimerDuration: null
+      };
+
+    case 'SWITCH_MODE':
+      return {
+        ...state,
+        timerMode: action.mode,
+        isRunning: false,
+        startTime: null,
+        pausedTime: 0
+      };
+
+    case 'TOGGLE_POMODORO':
+      return {
+        ...state,
+        isPomodoroActive: !state.isPomodoroActive,
+        timerMode: 'focus',
+        isRunning: false,
+        startTime: null,
+        pausedTime: 0,
+        customTimerDuration: null
+      };
+
+    case 'UPDATE_TIME_DURATION':
+      if (action.duration <= 0) return state;
+      
+      if (state.isPomodoroActive) {
+        return {
+          ...state,
+          customDurations: {
+            ...state.customDurations,
+            [state.timerMode]: action.duration
+          },
+          timeLeft: action.duration,
+          isRunning: false,
+          startTime: null,
+          pausedTime: 0
+        };
+      } else {
+        return {
+          ...state,
+          customTimerDuration: action.duration,
+          totalStudyTime: -action.duration,
+          isRunning: false,
+          startTime: null,
+          pausedTime: 0
+        };
+      }
+
+    case 'UPDATE_TIME_LEFT':
+      return {
+        ...state,
+        timeLeft: action.remaining
+      };
+
+    case 'UPDATE_TOTAL_TIME':
+      return {
+        ...state,
+        totalStudyTime: action.time
+      };
+
+    case 'INCREMENT_POMODORO':
+      return {
+        ...state,
+        pomodoroCount: state.pomodoroCount + 1
+      };
+
+    case 'SET_SAVING':
+      return {
+        ...state,
+        isSaving: action.isSaving
+      };
+
+    case 'LOAD_STATE':
+      return {
+        ...state,
+        ...action.state
+      };
+
+    case 'TOGGLE_ZEN_MODE':
+      if (state.isZenModeActive) {
+        // Calcular o tempo acumulado ao desativar
+        const additionalTime = state.zenModeStartTime 
+          ? Date.now() - state.zenModeStartTime 
+          : 0;
+        return {
+          ...state,
+          isZenModeActive: false,
+          zenModeStartTime: null,
+          zenModeAccumulatedTime: state.zenModeAccumulatedTime + additionalTime
+        };
+      } else {
+        return {
+          ...state,
+          isZenModeActive: true,
+          zenModeStartTime: Date.now()
+        };
+      }
+      
+    case 'UPDATE_ZEN_MODE_TIME':
+      return {
+        ...state,
+        zenModeAccumulatedTime: action.time
+      };
+
+    default:
+      return state;
+  }
+}
+
+type TimerContextType = TimerState & {
+  startTimer: () => void;
+  pauseTimer: () => void;
+  resetTimer: () => void;
+  saveSession: (name: string, isScheduledSession?: boolean, scheduledSessionId?: string) => void;
+  switchTimerMode: (mode: TimerMode) => void;
+  togglePomodoroTimer: () => void;
+  updateTimeDuration: (duration: number) => void;
+  progress: SharedValue<number>;
+  progressAnimation: SharedValue<number>;
+  goalProgress: number;
+  newAchievement: NewAchievementNotification | null;
+  clearNewAchievement: () => void;
+  toggleZenMode: () => void;
+};
+
+// Criar contexto
+const TimerContext = createContext<TimerContextType | undefined>(undefined);
+
+// Provider
+export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [state, dispatch] = useReducer(timerReducer, initialState);
+  const { settings } = useSettings();
+  const appState = useRef(AppState.currentState);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const goalTimer = useRef<NodeJS.Timeout | null>(null);
   
-  // Animation values
+  // Estado para as notificações de conquistas
+  const [newAchievement, setNewAchievement] = useState<NewAchievementNotification | null>(null);
+  
+  // Limpar a notificação de nova conquista
+  const clearNewAchievement = () => {
+    setNewAchievement(null);
+  };
+  
+  // Compartilhar valor para animações
   const progress = useSharedValue(0);
   const progressAnimation = useSharedValue(0);
-  const [goalProgress, setGoalProgress] = useState(0);
-
-  // Update reference when timerMode changes
-  useEffect(() => {
-    timerModeRef.current = timerMode;
-  }, [timerMode]);
-
-  // Get current timer duration based on settings and mode
-  const getCurrentModeDuration = (mode: TimerMode = timerMode): number => {
-    // Se existir uma duração personalizada para este modo, use-a
-    if (customDurations[mode] !== null) {
-      return customDurations[mode] as number;
+  
+  // Cálculo para progresso
+  const goalProgress = Math.min(
+    Math.abs(state.totalStudyTime) / (settings.dailyGoal * 60 * 1000), 
+    1
+  );
+  
+  // Obter duração do modo atual
+  const getCurrentModeDuration = (mode: TimerMode = state.timerMode): number => {
+    // Se há uma duração personalizada para este modo, use-a
+    if (state.customDurations[mode] !== null) {
+      return state.customDurations[mode] as number;
     }
     
-    // Caso contrário, use as configurações padrão
-    const { pomodoroSettings } = settings;
-    switch (mode) {
-      case 'focus':
-        return pomodoroSettings.focusTime * 60 * 1000; // convert minutes to ms
-      case 'shortBreak':
-        return pomodoroSettings.shortBreak * 60 * 1000;
-      case 'longBreak':
-        return pomodoroSettings.longBreak * 60 * 1000;
-      default:
-        return pomodoroSettings.focusTime * 60 * 1000;
+    // Caso contrário, use a duração das configurações
+    if (mode === 'focus') {
+      return settings.pomodoroSettings.focusTime * 60 * 1000;
+    } else if (mode === 'shortBreak') {
+      return settings.pomodoroSettings.shortBreak * 60 * 1000;
+    } else {
+      return settings.pomodoroSettings.longBreak * 60 * 1000;
     }
   };
-
-  // Load saved data when the app starts
+  
+  // Carregar dados salvos
   useEffect(() => {
     const loadSavedData = async () => {
       try {
-        const timerStateJSON = await AsyncStorage.getItem(STORAGE_KEYS.TIMER_STATE);
-        const sessionsJSON = await AsyncStorage.getItem(STORAGE_KEYS.STUDY_SESSIONS);
-
-        if (timerStateJSON) {
-          const timerState = JSON.parse(timerStateJSON);
-          setPausedTime(timerState.pausedTime || 0);
-          setTotalStudyTime(timerState.totalStudyTime || 0);
+        // Carregar estado do timer
+        const savedTimerState = await AsyncStorage.getItem(STORAGE_KEYS.TIMER_STATE);
+        if (savedTimerState) {
+          const parsedState = JSON.parse(savedTimerState);
           
-          // Carregar o modo do timer
-          const savedMode = timerState.timerMode || 'focus';
-          setTimerMode(savedMode);
-          timerModeRef.current = savedMode;
-          
-          setPomodoroCount(timerState.pomodoroCount || 0);
-          
-          // Carregar o estado ativo do Pomodoro e inicializar o tempo restante
-          const isPomodoro = timerState.isPomodoroActive || false;
-          setIsPomodoroActive(isPomodoro);
-          
-          // Carregar durações personalizadas, se existirem
-          if (timerState.customDurations) {
-            setCustomDurations(timerState.customDurations);
+          // Se o timer estava rodando quando o app foi fechado, calcular tempo adicional
+          if (parsedState.isRunning && parsedState.startTime) {
+            const timeElapsed = Date.now() - parsedState.startTime;
+            parsedState.pausedTime += timeElapsed;
+            parsedState.isRunning = false;
+            parsedState.startTime = null;
           }
           
-          if (timerState.customTimerDuration) {
-            setCustomTimerDuration(timerState.customTimerDuration);
-          }
-          
-          if (isPomodoro) {
-            const duration = getCurrentModeDuration(savedMode);
-            setTimeLeft(duration);
-            // Também atualizar o progresso visual para combinar
-            progress.value = 0;
-            progressAnimation.value = 0;
-          }
+          dispatch({ type: 'LOAD_STATE', state: parsedState });
         }
-
-        if (sessionsJSON) {
-          setStudySessions(JSON.parse(sessionsJSON));
+        
+        // Carregar sessões de estudo
+        const savedSessions = await AsyncStorage.getItem(STORAGE_KEYS.STUDY_SESSIONS);
+        if (savedSessions) {
+          dispatch({ 
+            type: 'LOAD_STATE', 
+            state: { studySessions: JSON.parse(savedSessions) } 
+          });
         }
       } catch (error) {
-        console.error('Error loading saved timer data:', error);
+        console.log('Erro ao carregar dados:', error);
       }
     };
-
+    
     loadSavedData();
+    
+    // Configurar listener para mudanças de estado do app
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    // Iniciar timer de atualização se o timer estiver em execução
+    if (state.isRunning && state.startTime) {
+      startTimerInterval();
+    }
+    
+    return () => {
+      subscription.remove();
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      if (goalTimer.current) {
+        clearTimeout(goalTimer.current);
+      }
+    };
   }, []);
-
-  // Save timer state when it changes
+  
+  // Salvar estado do timer
   useEffect(() => {
     const saveTimerState = async () => {
       try {
-        const timerState = {
-          pausedTime,
-          totalStudyTime,
-          timerMode,
-          pomodoroCount,
-          isPomodoroActive,
-          customDurations,
-          customTimerDuration,
+        // Salvar apenas os estados relevantes (evitar dados temporários)
+        const stateToSave = {
+          isRunning: state.isRunning,
+          startTime: state.startTime,
+          pausedTime: state.pausedTime,
+          totalStudyTime: state.totalStudyTime,
+          timerMode: state.timerMode,
+          pomodoroCount: state.pomodoroCount,
+          isPomodoroActive: state.isPomodoroActive,
+          timeLeft: state.timeLeft,
+          customTimerDuration: state.customTimerDuration,
+          customDurations: state.customDurations
         };
-        await AsyncStorage.setItem(STORAGE_KEYS.TIMER_STATE, JSON.stringify(timerState));
+        
+        await AsyncStorage.setItem(STORAGE_KEYS.TIMER_STATE, JSON.stringify(stateToSave));
       } catch (error) {
-        console.error('Error saving timer state:', error);
+        console.log('Erro ao salvar estado do timer:', error);
       }
     };
-
+    
     saveTimerState();
-  }, [pausedTime, totalStudyTime, timerMode, pomodoroCount, isPomodoroActive, customDurations, customTimerDuration]);
-
-  // Save study sessions when they change
+  }, [state]);
+  
+  // Salvar sessões de estudo
   useEffect(() => {
     const saveStudySessions = async () => {
       try {
-        await AsyncStorage.setItem(STORAGE_KEYS.STUDY_SESSIONS, JSON.stringify(studySessions));
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.STUDY_SESSIONS, 
+          JSON.stringify(state.studySessions)
+        );
       } catch (error) {
-        console.error('Error saving study sessions:', error);
+        console.log('Erro ao salvar sessões de estudo:', error);
       }
     };
-
-    saveStudySessions();
-  }, [studySessions]);
-
-  // Update time and progress when timer is running
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-
-    if (isRunning && startTime) {
-      intervalId = setInterval(() => {
-        const currentTime = Date.now();
-        const elapsedTime = currentTime - startTime + pausedTime;
-        
-        // Para o timer do pomodoro
-        if (isPomodoroActive) {
-          const currentModeDuration = getCurrentModeDuration(timerModeRef.current);
-          const remaining = Math.max(0, currentModeDuration - elapsedTime);
-          setTimeLeft(remaining);
-          
-          // Update progress animation
-          const newProgress = 1 - (remaining / currentModeDuration);
-          progress.value = newProgress;
-          progressAnimation.value = newProgress;
-          
-          // Auto-switch to next mode when timer finishes
-          if (remaining <= 0) {
-            // Pause the timer
-            pauseTimer();
-            
-            // Switch to next mode
-            if (timerModeRef.current === 'focus') {
-              // If we were in focus mode, count a completed pomodoro
-              const newCount = pomodoroCount + 1;
-              setPomodoroCount(newCount);
-              
-              // Track study time when focus session is completed
-              if (elapsedTime > 0) {
-                setTotalStudyTime(totalStudyTime + elapsedTime);
-              }
-              
-              // Check if it's time for a long break
-              const nextMode = newCount % settings.pomodoroSettings.sessionsBeforeLongBreak === 0 ? 'longBreak' : 'shortBreak';
-              
-              // Enviar notificação se estiver habilitado
-              if (settings.notificationsEnabled) {
-                // Passar o tempo de estudo para a notificação
-                sendPomodoroNotification(nextMode, totalStudyTime);
-              }
-              
-              switchTimerMode(nextMode);
-            } else {
-              // After any break, go back to focus
-              
-              // Enviar notificação se estiver habilitado
-              if (settings.notificationsEnabled) {
-                // Passar o tempo de estudo para a notificação
-                sendPomodoroNotification('focus', totalStudyTime);
-              }
-              
-              switchTimerMode('focus');
-          }
-        } 
-        // Timer padrão
-        else {
-          // Se temos um timer personalizado definido, comportamento de contagem regressiva
-          if (customTimerDuration !== null) {
-            const remaining = Math.max(0, customTimerDuration - elapsedTime);
-            setTotalStudyTime(-remaining); // Mantemos o valor negativo para indicar contagem regressiva
-            
-            // Se o timer chegou a zero
-            if (remaining <= 0) {
-              pauseTimer();
-              setTotalStudyTime(elapsedTime); // Registrar o tempo total de estudo
-              setCustomTimerDuration(null);   // Limpar a duração personalizada
-              
-              // Enviar notificação se estiver habilitado
-              if (settings.notificationsEnabled) {
-                // Passar o tempo de estudo para a notificação
-                sendStandardTimerNotification(elapsedTime);
-              }
-            }
-          } 
-          // Timer padrão normal (progressivo)
-          else {
-            setTotalStudyTime(elapsedTime);
-          }
-
-          // Calcular progresso diário, independente do modo
-          const dailyGoalMs = settings.dailyGoal * 60 * 1000;
-          const newGoalProgress = Math.min(elapsedTime / dailyGoalMs, 1);
-          setGoalProgress(newGoalProgress);
-        }
-      }, 1000);
-    }
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [isRunning, startTime, pausedTime, isPomodoroActive, timerMode, settings, totalStudyTime, pomodoroCount, customTimerDuration]);
-
-  // Função para permitir ao usuário definir manualmente a duração do timer
-  const updateTimeDuration = (duration: number) => {
-    if (duration <= 0) return;
     
-    // Pausar o timer se estiver rodando
-    if (isRunning) {
-      pauseTimer();
+    if (state.studySessions.length > 0) {
+      saveStudySessions();
     }
-    
-    if (isPomodoroActive) {
-      // Atualizar a duração personalizada para o modo atual
-      setCustomDurations({
-        ...customDurations,
-        [timerMode]: duration
+  }, [state.studySessions]);
+  
+  // Lidar com mudanças de estado do app (background/foreground)
+  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    // Se o app vai para background e o timer está rodando
+    if (
+      appState.current === 'active' && 
+      nextAppState.match(/inactive|background/) && 
+      state.isRunning
+    ) {
+      // Pausar o timer e salvar o tempo atual
+      const now = Date.now();
+      const elapsedTime = now - (state.startTime || now);
+      
+      dispatch({ 
+        type: 'PAUSE_TIMER'
       });
       
-      // Atualizar o tempo restante
-      setTimeLeft(duration);
-      progress.value = 0;
-      progressAnimation.value = 0;
-    } else {
-      // No modo padrão, reiniciar o contador e armazenar a duração
-      resetTimer();
+      // Se o modo Pomodoro estiver ativo, configurar notificação
+      if (state.isPomodoroActive) {
+        sendPomodoroNotification(state.timerMode, state.timeLeft - elapsedTime);
+      } else {
+        sendStandardTimerNotification();
+      }
+    }
+    
+    // Se o app volta ao foreground
+    if (
+      appState.current.match(/inactive|background/) && 
+      nextAppState === 'active'
+    ) {
+      // Reiniciar o timer se necessário
+      if (intervalRef.current === null && state.isRunning) {
+        startTimerInterval();
+      }
+    }
+    
+    appState.current = nextAppState;
+  };
+  
+  // Configurar intervalo para atualizar o timer
+  const startTimerInterval = () => {
+    // Limpar qualquer intervalo existente
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    
+    // Criar novo intervalo
+    intervalRef.current = setInterval(() => {
+      const now = Date.now();
       
-      // Armazenar a duração personalizada para o timer padrão
-      setCustomTimerDuration(duration);
+      // Calcular o tempo decorrido desde o início do timer
+      const elapsedTime = state.startTime ? now - state.startTime : 0;
       
-      // Inicializar a contagem regressiva
-      setTotalStudyTime(-duration); // Valor negativo para contagem regressiva
-    }
-  };
-
-  // Handle switching between timer modes
-  const switchTimerMode = (mode: TimerMode) => {
-    setTimerMode(mode);
-    timerModeRef.current = mode;
-    resetTimer();
-    
-    // Ao mudar o modo, definir imediatamente o tempo restante para o novo modo
-    if (isPomodoroActive) {
-      const duration = getCurrentModeDuration(mode);
-      setTimeLeft(duration);
-      progress.value = 0;
-      progressAnimation.value = 0;
-    }
-  };
-
-  // Toggle between standard and pomodoro timers
-  const togglePomodoroTimer = () => {
-    const newPomodoroActive = !isPomodoroActive;
-    setIsPomodoroActive(newPomodoroActive);
-    
-    // Redefinir o modo para foco ao alternar
-    setTimerMode('focus');
-    timerModeRef.current = 'focus';
-    
-    // Limpar timer personalizado ao alternar
-    setCustomTimerDuration(null);
-    
-    // Reiniciar o timer
-    resetTimer();
-    
-    // Se estiver ativando o pomodoro, inicializar o tempo restante
-    if (newPomodoroActive) {
-      const duration = getCurrentModeDuration('focus');
-      setTimeLeft(duration);
-      progress.value = 0;
-      progressAnimation.value = 0;
-    }
-  };
-
-  const startTimer = () => {
-    setIsRunning(true);
-    setStartTime(Date.now());
-    
-    // Se estiver no modo Pomodoro e o tempo restante ainda não foi definido,
-    // inicialize-o com a duração correta do modo atual
-    if (isPomodoroActive && timeLeft <= 0) {
-      const duration = getCurrentModeDuration(timerModeRef.current);
-      setTimeLeft(duration);
-      progress.value = 0;
-      progressAnimation.value = 0;
-    } else if (!isPomodoroActive && customTimerDuration) {
-      // Iniciar a contagem regressiva do timer personalizado
-      setTotalStudyTime(-customTimerDuration);
-    }
-  };
-
-  const pauseTimer = () => {
-    if (isRunning && startTime) {
-      const currentTime = Date.now();
-      const newPausedTime = pausedTime + (currentTime - startTime);
-      setPausedTime(newPausedTime);
-      setIsRunning(false);
-      setStartTime(null);
-    }
-  };
-
-  const resetTimer = () => {
-    setIsRunning(false);
-    setStartTime(null);
-    setPausedTime(0);
-    
-    if (isPomodoroActive) {
-      // Atualizar o timeLeft com base no modo atual
-      const duration = getCurrentModeDuration(timerModeRef.current);
-      setTimeLeft(duration);
-      progress.value = 0;
-      progressAnimation.value = 0;
-    } else if (customTimerDuration) {
-      // Resetar para o tempo personalizado como contagem regressiva
-      setTotalStudyTime(-customTimerDuration);
-    } else {
-      // Timer padrão normal
-      setTotalStudyTime(0);
-    }
-  };
-
-  const saveSession = async (name: string) => {
-    if (totalStudyTime > 0) {
-      try {
-        setIsSaving(true);
+      // Atualizar tempo baseado no tipo de timer
+      if (state.isPomodoroActive) {
+        // Modo Pomodoro
+        const currentModeDuration = getCurrentModeDuration();
+        let timeRemaining = currentModeDuration - (elapsedTime + state.pausedTime);
         
-        // Criar a nova sessão
-        const newSession: StudySession = {
-          id: Date.now().toString(),
-          name: name || "Sessão de Estudo",
-          duration: Math.abs(totalStudyTime), // Sempre usar valor positivo
-          date: new Date().toISOString(),
-        };
-
-        // Atualizar o estado
-        const updatedSessions = [newSession, ...studySessions];
-        setStudySessions(updatedSessions);
-        
-        // Salvar no armazenamento de forma síncrona
-        try {
-          await AsyncStorage.setItem(
-            STORAGE_KEYS.STUDY_SESSIONS, 
-            JSON.stringify(updatedSessions)
-          );
-        } catch (storageError) {
-          console.error('Erro ao salvar sessões:', storageError);
+        // Verificar se o timer chegou a zero
+        if (timeRemaining <= 0) {
+          clearInterval(intervalRef.current as NodeJS.Timeout);
+          intervalRef.current = null;
+          
+          // Mudar modo automaticamente
+          handlePomodoroComplete();
+          return;
         }
         
-        // Resetar o timer depois de salvar
-        resetTimer();
+        // Atualizar tempo restante
+        dispatch({ type: 'UPDATE_TIME_LEFT', remaining: timeRemaining });
+        updateTimerAnimation(timeRemaining, currentModeDuration);
+      } else {
+        // Modo Standard
+        const newTotalTime = state.totalStudyTime + elapsedTime;
+        dispatch({ type: 'UPDATE_TOTAL_TIME', time: newTotalTime });
         
-        // Limpar qualquer timer personalizado
-        setCustomTimerDuration(null);
-      } catch (error) {
-        console.error('Erro ao salvar sessão:', error);
-      } finally {
-        setIsSaving(false);
+        // Verificar se chegou a um timer preset contagem regressiva
+        if (state.customTimerDuration && state.totalStudyTime >= 0) {
+          // Timer completado
+          clearInterval(intervalRef.current as NodeJS.Timeout);
+          intervalRef.current = null;
+          
+          // Parar o timer
+          dispatch({ type: 'PAUSE_TIMER' });
+          // Opcional: Notificar o usuário
+        }
+      }
+    }, 100); // Atualizar a cada 100ms para maior precisão
+  };
+  
+  // Lidar com a conclusão do Pomodoro
+  const handlePomodoroComplete = () => {
+    // Parar o timer
+    dispatch({ type: 'PAUSE_TIMER' });
+    
+    const nextMode = getNextPomodoroMode();
+    
+    // Incrementar contador de pomodoros se um ciclo de foco foi completado
+    if (state.timerMode === 'focus') {
+      dispatch({ type: 'INCREMENT_POMODORO' });
+    }
+    
+    // Mudar para o próximo modo
+    dispatch({ type: 'SWITCH_MODE', mode: nextMode });
+    
+    // Atualizar o tempo restante para o novo modo
+    const nextModeDuration = getCurrentModeDuration(nextMode);
+    dispatch({ type: 'UPDATE_TIME_LEFT', remaining: nextModeDuration });
+    
+    // Tocar som de notificação ou vibrar
+    // Aqui você pode adicionar a lógica de notificação
+  };
+  
+  // Determinar o próximo modo do Pomodoro
+  const getNextPomodoroMode = (): TimerMode => {
+    if (state.timerMode === 'focus') {
+      // Após 'focus', verificar se deve ser pausa longa ou curta
+      const isLongBreakTime = (state.pomodoroCount + 1) % settings.pomodoroSettings.sessionsBeforeLongBreak === 0;
+      return isLongBreakTime ? 'longBreak' : 'shortBreak';
+    } else {
+      // Após qualquer pausa, voltar ao foco
+      return 'focus';
+    }
+  };
+  
+  // Atualizar animação do timer
+  const updateTimerAnimation = (timeRemaining: number, total: number) => {
+    progress.value = Math.max(0, timeRemaining / total);
+    progressAnimation.value = withTiming(progress.value, { duration: 200 });
+  };
+  
+  // Ações do timer
+  const startTimer = () => {
+    if (!state.isRunning) {
+      dispatch({ type: 'START_TIMER' });
+      
+      // Configurar timer no modo Pomodoro se necessário
+      if (state.isPomodoroActive && state.timeLeft <= 0) {
+        const currentModeDuration = getCurrentModeDuration();
+        dispatch({ type: 'UPDATE_TIME_LEFT', remaining: currentModeDuration });
+      }
+      
+      startTimerInterval();
+    }
+  };
+  
+  const pauseTimer = () => {
+    if (state.isRunning) {
+      dispatch({ type: 'PAUSE_TIMER' });
+      
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     }
   };
-
+  
+  const resetTimer = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    dispatch({ type: 'RESET_TIMER' });
+    
+    // Reiniciar o timer do Pomodoro se necessário
+    if (state.isPomodoroActive) {
+      const currentModeDuration = getCurrentModeDuration();
+      dispatch({ type: 'UPDATE_TIME_LEFT', remaining: currentModeDuration });
+      
+      // Resetar a animação
+      progress.value = 1;
+      progressAnimation.value = withTiming(1, { duration: 300 });
+    }
+  };
+  
+  const saveSession = async (name: string, isScheduledSession = false, scheduledSessionId?: string) => {
+    try {
+      dispatch({ type: 'SET_SAVING', isSaving: true });
+      
+      // Create session with relevant data
+      const newSession: StudySession = {
+        id: Date.now().toString(),
+        name: name || "Sessão de Estudo",
+        duration: Math.abs(state.totalStudyTime),
+        date: new Date().toISOString(),
+        isScheduledSession,
+        scheduledSessionId
+      };
+      
+      // Update achievements
+      const achievementResult = await updateAchievements(
+        newSession, 
+        state.zenModeAccumulatedTime,
+        isScheduledSession,
+        scheduledSessionId
+      );
+      
+      // Set new achievement notification if any
+      if (achievementResult.newlyCompletedAchievements.length > 0) {
+        const firstAchievement = achievementResult.newlyCompletedAchievements[0];
+        setNewAchievement({
+          achievement: firstAchievement as Achievement,
+          xpEarned: firstAchievement.xpReward
+        });
+      }
+      
+      // Save and update state
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.STUDY_SESSIONS,
+        JSON.stringify([newSession, ...state.studySessions])
+      );
+      
+      dispatch({ type: 'SAVE_SESSION', name });
+      
+      // Reset zen mode accumulated time
+      if (state.zenModeAccumulatedTime > 0) {
+        dispatch({ type: 'UPDATE_ZEN_MODE_TIME', time: -state.zenModeAccumulatedTime });
+      }
+      
+    } catch (error) {
+      console.error('Error saving session:', error);
+    } finally {
+      dispatch({ type: 'SET_SAVING', isSaving: false });
+    }
+  };
+  
+  const switchTimerMode = (mode: TimerMode) => {
+    if (state.timerMode !== mode) {
+      dispatch({ type: 'SWITCH_MODE', mode });
+      
+      // Atualizar tempo restante para o novo modo se estiver no Pomodoro
+      if (state.isPomodoroActive) {
+        const newModeDuration = getCurrentModeDuration(mode);
+        dispatch({ type: 'UPDATE_TIME_LEFT', remaining: newModeDuration });
+      }
+    }
+  };
+  
+  const togglePomodoroTimer = () => {
+    dispatch({ type: 'TOGGLE_POMODORO' });
+    
+    if (!state.isPomodoroActive) {
+      // Mudando para modo Pomodoro
+      const focusDuration = getCurrentModeDuration('focus');
+      dispatch({ type: 'UPDATE_TIME_LEFT', remaining: focusDuration });
+    }
+  };
+  
+  const updateTimeDuration = (duration: number) => {
+    // Converter minutos para milisegundos
+    const durationMs = duration * 60 * 1000;
+    dispatch({ type: 'UPDATE_TIME_DURATION', duration: durationMs });
+    
+    // Atualizar valores de animação
+    if (state.isPomodoroActive) {
+      progress.value = 1;
+      progressAnimation.value = withTiming(1, { duration: 300 });
+    }
+  };
+  
+  // Toggle modo zen
+  const toggleZenMode = () => {
+    dispatch({ type: 'TOGGLE_ZEN_MODE' });
+  };
+  
+  // Retornar o contexto
   return (
     <TimerContext.Provider
       value={{
-        isRunning,
-        startTime,
-        pausedTime,
-        totalStudyTime,
-        studySessions,
+        ...state,
         startTimer,
         pauseTimer,
         resetTimer,
         saveSession,
-        timerMode,
-        pomodoroCount,
         switchTimerMode,
-        progress,
-        progressAnimation,
-        timeLeft,
-        goalProgress,
-        isPomodoroActive,
         togglePomodoroTimer,
         updateTimeDuration,
-        customTimerDuration,
-        isSaving,
+        progress,
+        progressAnimation,
+        goalProgress,
+        newAchievement,
+        clearNewAchievement,
+        toggleZenMode
       }}
     >
       {children}
@@ -477,11 +699,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 };
 
-// Custom hook to use the timer context
+// Hook para acessar o contexto
 export const useTimer = (): TimerContextType => {
   const context = useContext(TimerContext);
-  if (context === undefined) {
-    throw new Error('useTimer must be used within a TimerProvider');
+  if (!context) {
+    throw new Error('useTimer deve ser usado dentro de um TimerProvider');
   }
   return context;
 };

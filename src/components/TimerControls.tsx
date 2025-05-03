@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Button, useTheme, Text, IconButton } from 'react-native-paper';
 import { useTimer } from '../contexts/TimerContext';
@@ -12,6 +12,149 @@ import Animated, {
 
 const AnimatedButton = Animated.createAnimatedComponent(Pressable);
 
+// Componente para o botão de Modo Pomodoro
+const PomodoroModeButtons = React.memo(({ 
+  timerMode, 
+  switchTimerMode 
+}: { 
+  timerMode: string, 
+  switchTimerMode: (mode: any) => void 
+}) => {
+  const theme = useTheme();
+  
+  return (
+    <View style={[
+      styles.modeSelector,
+      {
+        backgroundColor: theme.colors.surface,
+        borderRadius: 16,
+        borderColor: theme.colors.outline,
+        borderWidth: 1,
+      }
+    ]}>
+      <Button
+        mode={timerMode === 'focus' ? 'contained' : 'outlined'}
+        onPress={() => switchTimerMode('focus')}
+        style={[
+          styles.modeButton,
+          timerMode === 'focus' ? { backgroundColor: theme.colors.primary } : null
+        ]}
+        labelStyle={{ 
+          color: timerMode === 'focus' ? theme.colors.onPrimary : theme.colors.primary,
+        }}
+        compact
+      >
+        Foco
+      </Button>
+      <Button
+        mode={timerMode === 'shortBreak' ? 'contained' : 'outlined'}
+        onPress={() => switchTimerMode('shortBreak')}
+        style={[
+          styles.modeButton,
+          timerMode === 'shortBreak' ? { backgroundColor: theme.colors.primary } : null
+        ]}
+        labelStyle={{ 
+          color: timerMode === 'shortBreak' ? theme.colors.onPrimary : theme.colors.primary,
+        }}
+        compact
+      >
+        Pausa Curta
+      </Button>
+      <Button
+        mode={timerMode === 'longBreak' ? 'contained' : 'outlined'}
+        onPress={() => switchTimerMode('longBreak')}
+        style={[
+          styles.modeButton,
+          timerMode === 'longBreak' ? { backgroundColor: theme.colors.primary } : null
+        ]}
+        labelStyle={{ 
+          color: timerMode === 'longBreak' ? theme.colors.onPrimary : theme.colors.primary,
+        }}
+        compact
+      >
+        Pausa Longa
+      </Button>
+    </View>
+  );
+});
+
+// Componente para botões de ação secundários
+const ActionButtons = React.memo(({ 
+  resetTimer, 
+  togglePomodoroTimer, 
+  isPomodoroActive,
+  buttonAnimStyle
+}: { 
+  resetTimer: () => void,
+  togglePomodoroTimer: () => void,
+  isPomodoroActive: boolean,
+  buttonAnimStyle: any
+}) => {
+  const theme = useTheme();
+  
+  // Button press animation
+  const animatePress = useCallback(() => {
+    // Esta função é implementada fora, aqui apenas um placeholder
+  }, []);
+  
+  return (
+    <View style={styles.controlsRow}>
+      {/* Reset button */}
+      <AnimatedButton
+        style={[
+          styles.iconButtonContainer,
+          buttonAnimStyle,
+          { 
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outline,
+            borderWidth: 1
+          }
+        ]}
+        onPress={resetTimer}
+      >
+        <IconButton
+          icon="refresh"
+          size={24}
+          iconColor={theme.colors.primary}
+        />
+        <Text style={[
+          styles.iconButtonLabel, 
+          { color: theme.colors.primary }
+        ]}>
+          Reiniciar
+        </Text>
+      </AnimatedButton>
+
+      {/* Timer mode toggle */}
+      <AnimatedButton
+        style={[
+          styles.iconButtonContainer,
+          buttonAnimStyle,
+          { 
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outline,
+            borderWidth: 1
+          }
+        ]}
+        onPress={togglePomodoroTimer}
+      >
+        <IconButton
+          icon={isPomodoroActive ? "timer" : "timer-sand"}
+          size={24}
+          iconColor={theme.colors.primary}
+        />
+        <Text style={[
+          styles.iconButtonLabel, 
+          { color: theme.colors.primary }
+        ]}>
+          {isPomodoroActive ? "Normal" : "Pomodoro"}
+        </Text>
+      </AnimatedButton>
+    </View>
+  );
+});
+
+// Componente principal
 const TimerControls: React.FC = () => {
   const { 
     isRunning, 
@@ -31,20 +174,20 @@ const TimerControls: React.FC = () => {
   const actionButtonScale = useSharedValue(1);
   
   // Button press animation
-  const animatePress = () => {
+  const animatePress = useCallback(() => {
     buttonScale.value = withSequence(
       withTiming(0.95, { duration: 100 }),
       withTiming(1, { duration: 100 })
     );
-  };
+  }, [buttonScale]);
   
   // Start/pause button animation
-  const playButtonAnimation = () => {
+  const playButtonAnimation = useCallback(() => {
     actionButtonScale.value = withSequence(
       withSpring(1.15, { damping: 4 }),
       withSpring(1, { damping: 10 })
     );
-  };
+  }, [actionButtonScale]);
 
   // Animated styles
   const buttonAnimStyle = useAnimatedStyle(() => {
@@ -52,18 +195,34 @@ const TimerControls: React.FC = () => {
       transform: [{ scale: buttonScale.value }],
       opacity: buttonOpacity.value,
     };
-  });
+  }, [buttonScale, buttonOpacity]);
   
   const actionButtonStyle = useAnimatedStyle(() => {
     return {
       transform: [{ scale: actionButtonScale.value }],
     };
-  });
+  }, [actionButtonScale]);
 
-  const handleTogglePomodoroMode = () => {
+  // Handlers
+  const handleTogglePomodoroMode = useCallback(() => {
     animatePress();
     togglePomodoroTimer();
-  };
+  }, [animatePress, togglePomodoroTimer]);
+  
+  const handleReset = useCallback(() => {
+    resetTimer();
+    animatePress();
+  }, [resetTimer, animatePress]);
+  
+  const handlePause = useCallback(() => {
+    pauseTimer();
+    playButtonAnimation();
+  }, [pauseTimer, playButtonAnimation]);
+  
+  const handleStart = useCallback(() => {
+    startTimer();
+    playButtonAnimation();
+  }, [startTimer, playButtonAnimation]);
 
   return (
     <View style={styles.container}>
@@ -72,10 +231,7 @@ const TimerControls: React.FC = () => {
         {isRunning ? (
           <Button
             mode="contained"
-            onPress={() => {
-              pauseTimer();
-              playButtonAnimation();
-            }}
+            onPress={handlePause}
             style={[styles.mainButton, { backgroundColor: theme.colors.primary }]}
             icon="pause"
             contentStyle={styles.buttonContent}
@@ -86,10 +242,7 @@ const TimerControls: React.FC = () => {
         ) : (
           <Button
             mode="contained"
-            onPress={() => {
-              startTimer();
-              playButtonAnimation();
-            }}
+            onPress={handleStart}
             style={[styles.mainButton, { backgroundColor: theme.colors.primary }]}
             icon="play"
             contentStyle={styles.buttonContent}
@@ -100,121 +253,20 @@ const TimerControls: React.FC = () => {
         )}
       </Animated.View>
 
-      <View style={styles.controlsRow}>
-        {/* Reset button */}
-        <AnimatedButton
-          style={[
-            styles.iconButtonContainer,
-            buttonAnimStyle,
-            { 
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.outline,
-              borderWidth: 1
-            }
-          ]}
-          onPress={() => {
-            resetTimer();
-            animatePress();
-          }}
-        >
-          <IconButton
-            icon="refresh"
-            size={24}
-            iconColor={theme.colors.primary}
-          />
-          <Text style={[
-            styles.iconButtonLabel, 
-            { 
-              color: theme.colors.primary,
-            }
-          ]}>
-            Reiniciar
-          </Text>
-        </AnimatedButton>
-
-        {/* Timer mode toggle */}
-        <AnimatedButton
-          style={[
-            styles.iconButtonContainer,
-            buttonAnimStyle,
-            { 
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.outline,
-              borderWidth: 1
-            }
-          ]}
-          onPress={handleTogglePomodoroMode}
-        >
-          <IconButton
-            icon={isPomodoroActive ? "timer" : "timer-sand"}
-            size={24}
-            iconColor={theme.colors.primary}
-          />
-          <Text style={[
-            styles.iconButtonLabel, 
-            { 
-              color: theme.colors.primary,
-            }
-          ]}>
-            {isPomodoroActive ? "Normal" : "Pomodoro"}
-          </Text>
-        </AnimatedButton>
-      </View>
+      {/* Action buttons (reset and toggle mode) */}
+      <ActionButtons 
+        resetTimer={handleReset}
+        togglePomodoroTimer={handleTogglePomodoroMode}
+        isPomodoroActive={isPomodoroActive}
+        buttonAnimStyle={buttonAnimStyle}
+      />
 
       {/* Timer mode selection for Pomodoro */}
       {isPomodoroActive && (
-        <View style={[
-          styles.modeSelector,
-          {
-            backgroundColor: theme.colors.surface,
-            borderRadius: 16,
-            borderColor: theme.colors.outline,
-            borderWidth: 1,
-          }
-        ]}>
-          <Button
-            mode={timerMode === 'focus' ? 'contained' : 'outlined'}
-            onPress={() => switchTimerMode('focus')}
-            style={[
-              styles.modeButton,
-              timerMode === 'focus' ? { backgroundColor: theme.colors.primary } : null
-            ]}
-            labelStyle={{ 
-              color: timerMode === 'focus' ? theme.colors.onPrimary : theme.colors.primary,
-            }}
-            compact
-          >
-            Foco
-          </Button>
-          <Button
-            mode={timerMode === 'shortBreak' ? 'contained' : 'outlined'}
-            onPress={() => switchTimerMode('shortBreak')}
-            style={[
-              styles.modeButton,
-              timerMode === 'shortBreak' ? { backgroundColor: theme.colors.primary } : null
-            ]}
-            labelStyle={{ 
-              color: timerMode === 'shortBreak' ? theme.colors.onPrimary : theme.colors.primary,
-            }}
-            compact
-          >
-            Pausa Curta
-          </Button>
-          <Button
-            mode={timerMode === 'longBreak' ? 'contained' : 'outlined'}
-            onPress={() => switchTimerMode('longBreak')}
-            style={[
-              styles.modeButton,
-              timerMode === 'longBreak' ? { backgroundColor: theme.colors.primary } : null
-            ]}
-            labelStyle={{ 
-              color: timerMode === 'longBreak' ? theme.colors.onPrimary : theme.colors.primary,
-            }}
-            compact
-          >
-            Pausa Longa
-          </Button>
-        </View>
+        <PomodoroModeButtons 
+          timerMode={timerMode} 
+          switchTimerMode={switchTimerMode} 
+        />
       )}
     </View>
   );
@@ -291,4 +343,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TimerControls; 
+export default React.memo(TimerControls); 

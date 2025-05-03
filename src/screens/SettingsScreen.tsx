@@ -1,442 +1,533 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { 
-  Text, 
-  Switch, 
-  useTheme, 
-  Card, 
-  Divider, 
-  Button, 
-  IconButton, 
-  RadioButton, 
-  List,
-  Surface
-} from 'react-native-paper';
-import Slider from '@react-native-community/slider';
-import { useSettings } from '../contexts/SettingsContext';
-import Animated, { 
-  FadeInUp, 
-  FadeInDown,
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming
-} from 'react-native-reanimated';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, Alert, Platform, BackHandler } from 'react-native';
+import { Text, Switch, useTheme, Button, Divider, List, RadioButton, Card, IconButton } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSettings } from '../contexts/SettingsContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import SliderWithLabel from '../components/SliderWithLabel';
+import Dialog from '../components/Dialog';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import { useFocusEffect } from '@react-navigation/native';
+import { goBack } from '../components/AppNavigator';
 
 const SettingsScreen: React.FC = () => {
-  const { settings, updateTheme, updateTimerType, updatePomodoroSettings, 
-          toggleSound, toggleNotifications, updateDailyGoal } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [isBackupDialogVisible, setIsBackupDialogVisible] = useState(false);
+  const [isRestoreDialogVisible, setIsRestoreDialogVisible] = useState(false);
+  const [restoreCode, setRestoreCode] = useState('');
+  const [backupCode, setBackupCode] = useState('');
+
+  // Lidar com o botão de voltar no Android
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        goBack();
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => subscription.remove();
+    }, [])
+  );
+
+  // Create backup
+  const createBackup = useCallback(async () => {
+    try {
+      // Get all the data from AsyncStorage
+      const data = {
+        version: '0.1.6',
+        timestamp: new Date().toISOString(),
+        settings: settings,
+        // Add more data as needed
+      };
+
+      // Convert to JSON string
+      const backupData = JSON.stringify(data);
+      
+      // Using a simple encoding for demo - in a real app, you'd use better encryption
+      const encoded = Buffer.from(backupData).toString('base64');
+      
+      setBackupCode(encoded);
+      setIsBackupDialogVisible(true);
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível criar o backup.');
+    }
+  }, [settings]);
+
+  // Restore from backup
+  const restoreFromBackup = useCallback(async () => {
+    try {
+      // Basic validation
+      if (!restoreCode.trim()) {
+        Alert.alert('Erro', 'Por favor, insira um código de backup válido.');
+        return;
+      }
+      
+      // Decode the backup code
+      const decoded = Buffer.from(restoreCode, 'base64').toString('utf8');
+      const data = JSON.parse(decoded);
+      
+      // Validate the backup format
+      if (!data.version || !data.settings) {
+        Alert.alert('Erro', 'O código de backup é inválido ou está corrompido.');
+        return;
+      }
+      
+      // Apply the restored settings
+      updateSettings(data.settings);
+      
+      Alert.alert('Sucesso', 'Suas configurações foram restauradas com sucesso!');
+      setIsRestoreDialogVisible(false);
+      setRestoreCode('');
+      
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível restaurar a partir do backup.');
+    }
+  }, [restoreCode, updateSettings]);
   
-  // Animation values
-  const settingScale = useSharedValue(1);
-  
-  // Section headings style
-  const sectionStyle = {
-    fontSize: 18,
-    color: theme.colors.primary,
-    fontWeight: 'bold' as 'bold',
-    marginTop: 16,
-    marginBottom: 8,
-  };
+  // Voltar para a tela anterior
+  const handleGoBack = useCallback(() => {
+    goBack();
+  }, []);
 
-  const handleScaleAnimation = () => {
-    settingScale.value = withTiming(0.97, { duration: 100 }, () => {
-      settingScale.value = withTiming(1, { duration: 100 });
-    });
-  };
-
-  const handleThemeChange = (theme: 'light' | 'dark') => {
-    updateTheme(theme);
-    handleScaleAnimation();
-  };
-
-  const handleTimerTypeChange = (type: 'standard' | 'pomodoro') => {
-    updateTimerType(type);
-    handleScaleAnimation();
-  };
-
-  const handlePomodoroDurationChange = (type: keyof typeof settings.pomodoroSettings, value: number) => {
-    updatePomodoroSettings({
-      ...settings.pomodoroSettings,
-      [type]: value,
-    });
-  };
-
-  const handleDailyGoalChange = (minutes: number) => {
-    updateDailyGoal(minutes);
-  };
+  // Atualizar o tema com persistência
+  const updateTheme = useCallback((value: 'light' | 'dark' | 'system') => {
+    try {
+      // Atualizar no contexto
+      updateSettings({
+        ...settings,
+        theme: value
+      });
+      
+      // Salvar no AsyncStorage para persistência
+      AsyncStorage.setItem('settings', JSON.stringify({
+        ...settings,
+        theme: value
+      }));
+    } catch (error) {
+      console.error('Erro ao salvar tema:', error);
+      Alert.alert('Erro', 'Não foi possível salvar o tema.');
+    }
+  }, [settings, updateSettings]);
 
   return (
-    <ScrollView 
-      style={[
-        styles.container, 
-        { 
-          backgroundColor: theme.colors.background,
-          paddingTop: Math.max(16, insets.top)
-        }
-      ]}
-      contentContainerStyle={[
-        styles.contentContainer, 
-        { 
-          paddingBottom: Math.max(16, insets.bottom)
-        }
-      ]}
-    >
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <View style={[styles.header, { 
+        backgroundColor: theme.colors.surface,
+        paddingTop: Math.max(16, insets.top),
+      }]}>
+        <IconButton 
+          icon="arrow-left"
+          size={24}
+          onPress={handleGoBack}
+        />
         <Text 
-          variant="headlineMedium" 
-          style={[styles.headerText, { color: theme.colors.primary }]}
+          variant="headlineSmall" 
+          style={{ color: theme.colors.primary, fontWeight: 'bold' }}
         >
           Configurações
         </Text>
+        <View style={{ width: 40 }} /> {/* Espaçador para centralizar o título */}
       </View>
-
-      {/* Theme Settings */}
-      <Animated.View entering={FadeInUp.delay(100).duration(500)}>
-        <Text style={sectionStyle}>Aparência</Text>
-        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <View style={styles.settingRow}>
-              <Text style={{ color: theme.colors.onSurface }}>Tema</Text>
-              <View style={styles.themeOptions}>
-                <TouchableOpacity
-                  style={[
-                    styles.themeOption,
-                    { 
-                      backgroundColor: '#F5F0E6',
-                      borderColor: settings.theme === 'light' ? theme.colors.primary : '#F5F0E6',
-                      borderWidth: settings.theme === 'light' ? 2 : 0,
-                    }
-                  ]}
-                  onPress={() => handleThemeChange('light')}
-                >
-                  <IconButton
-                    icon="white-balance-sunny"
-                    iconColor="#2D3047"
-                    size={24}
-                  />
-                  <Text style={{ color: '#2D3047' }}>Claro</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.themeOption,
-                    { 
-                      backgroundColor: '#212121',
-                      borderColor: settings.theme === 'dark' ? theme.colors.primary : '#212121',
-                      borderWidth: settings.theme === 'dark' ? 2 : 0,
-                    }
-                  ]}
-                  onPress={() => handleThemeChange('dark')}
-                >
-                  <IconButton
-                    icon="weather-night"
-                    iconColor="#fff"
-                    size={24}
-                  />
-                  <Text style={{ color: '#fff' }}>Escuro</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
-      </Animated.View>
-
-      {/* Timer Settings */}
-      <Animated.View entering={FadeInUp.delay(200).duration(500)}>
-        <Text style={sectionStyle}>Timer</Text>
-        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <View style={styles.settingRow}>
-              <Text style={{ color: theme.colors.onSurface }}>Tipo de Timer</Text>
-              <View style={styles.timerTypeContainer}>
-                <RadioButton.Group
-                  value={settings.timerType}
-                  onValueChange={(value) => 
-                    handleTimerTypeChange(value as 'standard' | 'pomodoro')
-                  }
-                >
-                  <View style={styles.radioRow}>
-                    <RadioButton
-                      value="standard"
-                      color={theme.colors.primary}
-                    />
-                    <Text style={{ color: theme.colors.onSurface }}>Padrão</Text>
+    
+      <ScrollView
+        contentContainerStyle={{
+          paddingBottom: Math.max(20, insets.bottom),
+          paddingHorizontal: 16,
+          paddingTop: 16,
+        }}
+      >
+        <Animated.View
+          entering={FadeIn.duration(300)}
+        >
+          {/* Tema */}
+          <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <Card.Title title="Aparência" />
+            <Card.Content>
+              <List.Item
+                title="Tema"
+                description="Escolha entre tema claro, escuro ou sistema"
+                right={() => (
+                  <View style={styles.themeSelector}>
+                    <RadioButton.Group
+                      value={settings.theme}
+                      onValueChange={(value) => 
+                        updateTheme(value as 'light' | 'dark' | 'system')
+                      }
+                    >
+                      <View style={styles.radioItem}>
+                        <RadioButton.Item 
+                          label="Claro" 
+                          value="light"
+                          labelStyle={{ color: theme.colors.onSurface }}
+                        />
+                      </View>
+                      <View style={styles.radioItem}>
+                        <RadioButton.Item 
+                          label="Escuro" 
+                          value="dark"
+                          labelStyle={{ color: theme.colors.onSurface }}
+                        />
+                      </View>
+                      <View style={styles.radioItem}>
+                        <RadioButton.Item 
+                          label="Sistema" 
+                          value="system"
+                          labelStyle={{ color: theme.colors.onSurface }}
+                        />
+                      </View>
+                    </RadioButton.Group>
                   </View>
-                  <View style={styles.radioRow}>
-                    <RadioButton
-                      value="pomodoro"
-                      color={theme.colors.primary}
-                    />
-                    <Text style={{ color: theme.colors.onSurface }}>Pomodoro</Text>
-                  </View>
-                </RadioButton.Group>
-              </View>
-            </View>
+                )}
+              />
+            </Card.Content>
+          </Card>
 
-            {settings.timerType === 'pomodoro' && (
-              <Animated.View 
-                entering={FadeInDown.duration(300)}
-                style={styles.pomodoroSettings}
-              >
-                <Divider style={styles.divider} />
-                <Text style={{ marginBottom: 10, fontWeight: 'bold', color: theme.colors.onSurface }}>
-                  Configuração do Pomodoro
-                </Text>
-                
-                <List.Item
-                  title="Tempo de foco"
-                  titleStyle={{ color: theme.colors.onSurface }}
-                  description={`${settings.pomodoroSettings.focusTime} minutos`}
-                  descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-                  right={() => (
-                    <View style={styles.sliderContainer}>
-                      <Slider
-                        value={settings.pomodoroSettings.focusTime}
-                        onValueChange={(value: number) => 
-                          handlePomodoroDurationChange('focusTime', value)
+          {/* Pomodoro */}
+          <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <Card.Title title="Pomodoro" />
+            <Card.Content>
+              <List.Item
+                title="Tempo de Foco"
+                description="Duração das sessões de foco"
+                right={() => (
+                  <SliderWithLabel
+                    value={settings.pomodoroSettings.focusTime}
+                    onValueChange={(value) => 
+                      updateSettings({
+                        ...settings,
+                        pomodoroSettings: {
+                          ...settings.pomodoroSettings,
+                          focusTime: value
                         }
-                        minimumValue={5}
-                        maximumValue={60}
-                        step={5}
-                        minimumTrackTintColor={theme.colors.primary}
-                        style={{ width: 150 }}
-                        thumbTintColor={theme.colors.primary}
-                      />
-                    </View>
-                  )}
-                />
-                
-                <List.Item
-                  title="Pausa curta"
-                  titleStyle={{ color: theme.colors.onSurface }}
-                  description={`${settings.pomodoroSettings.shortBreak} minutos`}
-                  descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-                  right={() => (
-                    <View style={styles.sliderContainer}>
-                      <Slider
-                        value={settings.pomodoroSettings.shortBreak}
-                        onValueChange={(value: number) => 
-                          handlePomodoroDurationChange('shortBreak', value)
+                      })
+                    }
+                    minimumValue={5}
+                    maximumValue={60}
+                    step={5}
+                    label={`${settings.pomodoroSettings.focusTime} min`}
+                    containerStyle={{ width: 150 }}
+                  />
+                )}
+              />
+              
+              <Divider style={styles.divider} />
+              
+              <List.Item
+                title="Pausa Curta"
+                description="Duração das pausas curtas"
+                right={() => (
+                  <SliderWithLabel
+                    value={settings.pomodoroSettings.shortBreak}
+                    onValueChange={(value) => 
+                      updateSettings({
+                        ...settings,
+                        pomodoroSettings: {
+                          ...settings.pomodoroSettings,
+                          shortBreak: value
                         }
-                        minimumValue={1}
-                        maximumValue={15}
-                        step={1}
-                        minimumTrackTintColor={theme.colors.secondary}
-                        style={{ width: 150 }}
-                        thumbTintColor={theme.colors.secondary}
-                      />
-                    </View>
-                  )}
-                />
-                
-                <List.Item
-                  title="Pausa longa"
-                  titleStyle={{ color: theme.colors.onSurface }}
-                  description={`${settings.pomodoroSettings.longBreak} minutos`}
-                  descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-                  right={() => (
-                    <View style={styles.sliderContainer}>
-                      <Slider
-                        value={settings.pomodoroSettings.longBreak}
-                        onValueChange={(value: number) => 
-                          handlePomodoroDurationChange('longBreak', value)
+                      })
+                    }
+                    minimumValue={3}
+                    maximumValue={15}
+                    step={1}
+                    label={`${settings.pomodoroSettings.shortBreak} min`}
+                    containerStyle={{ width: 150 }}
+                  />
+                )}
+              />
+              
+              <Divider style={styles.divider} />
+              
+              <List.Item
+                title="Pausa Longa"
+                description="Duração das pausas longas"
+                right={() => (
+                  <SliderWithLabel
+                    value={settings.pomodoroSettings.longBreak}
+                    onValueChange={(value) => 
+                      updateSettings({
+                        ...settings,
+                        pomodoroSettings: {
+                          ...settings.pomodoroSettings,
+                          longBreak: value
                         }
-                        minimumValue={10}
-                        maximumValue={30}
-                        step={5}
-                        minimumTrackTintColor={theme.colors.tertiary}
-                        style={{ width: 150 }}
-                        thumbTintColor={theme.colors.tertiary}
-                      />
-                    </View>
-                  )}
-                />
+                      })
+                    }
+                    minimumValue={15}
+                    maximumValue={30}
+                    step={5}
+                    label={`${settings.pomodoroSettings.longBreak} min`}
+                    containerStyle={{ width: 150 }}
+                  />
+                )}
+              />
+              
+              <Divider style={styles.divider} />
+              
+              <List.Item
+                title="Ciclos até Pausa Longa"
+                description="Número de sessões antes da pausa longa"
+                right={() => (
+                  <SliderWithLabel
+                    value={settings.pomodoroSettings.sessionsBeforeLongBreak}
+                    onValueChange={(value) => 
+                      updateSettings({
+                        ...settings,
+                        pomodoroSettings: {
+                          ...settings.pomodoroSettings,
+                          sessionsBeforeLongBreak: value
+                        }
+                      })
+                    }
+                    minimumValue={2}
+                    maximumValue={6}
+                    step={1}
+                    label={`${settings.pomodoroSettings.sessionsBeforeLongBreak}`}
+                    containerStyle={{ width: 150 }}
+                  />
+                )}
+              />
+            </Card.Content>
+          </Card>
 
-                <List.Item
-                  title="Sessões até pausa longa"
-                  titleStyle={{ color: theme.colors.onSurface }}
-                  description={`${settings.pomodoroSettings.sessionsBeforeLongBreak} sessões`}
-                  descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-                  right={() => (
-                    <View style={styles.sliderContainer}>
-                      <Slider
-                        value={settings.pomodoroSettings.sessionsBeforeLongBreak}
-                        onValueChange={(value: number) => 
-                          handlePomodoroDurationChange('sessionsBeforeLongBreak', value)
+          {/* Notificações */}
+          <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <Card.Title title="Notificações" />
+            <Card.Content>
+              <List.Item
+                title="Som ao completar"
+                description="Tocar um som quando o timer terminar"
+                right={() => (
+                  <Switch
+                    value={settings.notifications.sound}
+                    onValueChange={(value) => 
+                      updateSettings({
+                        ...settings,
+                        notifications: {
+                          ...settings.notifications,
+                          sound: value
                         }
-                        minimumValue={2}
-                        maximumValue={6}
-                        step={1}
-                        minimumTrackTintColor={theme.colors.primary}
-                        style={{ width: 150 }}
-                        thumbTintColor={theme.colors.primary}
-                      />
-                    </View>
-                  )}
-                />
-              </Animated.View>
-            )}
-          </Card.Content>
-        </Card>
-      </Animated.View>
+                      })
+                    }
+                    color={theme.colors.primary}
+                  />
+                )}
+              />
+              
+              <Divider style={styles.divider} />
+              
+              <List.Item
+                title="Vibração"
+                description="Vibrar quando o timer terminar"
+                right={() => (
+                  <Switch
+                    value={settings.notifications.vibration}
+                    onValueChange={(value) => 
+                      updateSettings({
+                        ...settings,
+                        notifications: {
+                          ...settings.notifications,
+                          vibration: value
+                        }
+                      })
+                    }
+                    color={theme.colors.primary}
+                  />
+                )}
+              />
+            </Card.Content>
+          </Card>
 
-      {/* Goals Settings */}
-      <Animated.View entering={FadeInUp.delay(300).duration(500)}>
-        <Text style={sectionStyle}>Metas Diárias</Text>
-        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <List.Item
-              title="Meta de estudo diária"
-              titleStyle={{ color: theme.colors.onSurface }}
-              description={`${settings.dailyGoal} minutos`}
-              descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-              right={() => (
-                <View style={styles.sliderContainer}>
-                  <Slider
+          {/* Metas */}
+          <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <Card.Title title="Metas" />
+            <Card.Content>
+              <List.Item
+                title="Meta Diária"
+                description="Tempo de estudo diário em minutos"
+                right={() => (
+                  <SliderWithLabel
                     value={settings.dailyGoal}
-                    onValueChange={(value: number) => handleDailyGoalChange(value)}
+                    onValueChange={(value) => 
+                      updateSettings({
+                        ...settings,
+                        dailyGoal: value
+                      })
+                    }
                     minimumValue={30}
-                    maximumValue={480}
+                    maximumValue={240}
                     step={30}
-                    minimumTrackTintColor={theme.colors.primary}
-                    style={{ width: 150 }}
-                    thumbTintColor={theme.colors.primary}
+                    label={`${settings.dailyGoal} min`}
+                    containerStyle={{ width: 150 }}
                   />
-                </View>
-              )}
-            />
-          </Card.Content>
-        </Card>
-      </Animated.View>
+                )}
+              />
+            </Card.Content>
+          </Card>
 
-      {/* Notifications Settings */}
-      <Animated.View entering={FadeInUp.delay(400).duration(500)}>
-        <Text style={sectionStyle}>Notificações</Text>
-        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <List.Item
-              title="Som ao terminar"
-              titleStyle={{ color: theme.colors.onSurface }}
-              description="Tocar som ao finalizar um ciclo"
-              descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-              right={() => (
-                <Switch
-                  value={settings.soundEnabled}
-                  onValueChange={toggleSound}
-                  color={theme.colors.primary}
-                />
-              )}
-            />
-            <Divider style={styles.divider} />
-            <List.Item
-              title="Notificações"
-              titleStyle={{ color: theme.colors.onSurface }}
-              description="Receber notificações do timer"
-              descriptionStyle={{ color: theme.colors.onSurfaceVariant }}
-              right={() => (
-                <Switch
-                  value={settings.notificationsEnabled}
-                  onValueChange={toggleNotifications}
-                  color={theme.colors.primary}
-                />
-              )}
-            />
-          </Card.Content>
-        </Card>
-      </Animated.View>
+          {/* Backup e Restauração */}
+          <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <Card.Title title="Backup e Restauração" />
+            <Card.Content>
+              <View style={styles.buttonContainer}>
+                <Button 
+                  mode="outlined" 
+                  onPress={createBackup}
+                  style={styles.button}
+                >
+                  Criar Backup
+                </Button>
+                
+                <Button 
+                  mode="outlined" 
+                  onPress={() => setIsRestoreDialogVisible(true)}
+                  style={styles.button}
+                >
+                  Restaurar
+                </Button>
+              </View>
+            </Card.Content>
+          </Card>
 
-      {/* About Section */}
-      <Animated.View entering={FadeInUp.delay(500).duration(500)}>
-        <Text style={sectionStyle}>Sobre</Text>
-        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-          <Card.Content>
-            <Text style={[styles.aboutText, { color: theme.colors.onSurface }]}>
-              Cole - Cronômetro de Estudos
+          {/* Sobre o App */}
+          <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <Card.Title title="Sobre o App" />
+            <Card.Content>
+              <Text style={{ marginBottom: 8 }}>
+                Cole - Cronômetro de Estudos (2025)
+              </Text>
+              <Text style={{ marginBottom: 8 }}>
+                Versão: 0.1.6
+              </Text>
+              <Text>
+                Um aplicativo para ajudar você a manter o foco nos estudos e melhorar sua produtividade.
+              </Text>
+            </Card.Content>
+          </Card>
+        </Animated.View>
+      </ScrollView>
+
+      {/* Diálogo de Backup */}
+      <Dialog
+        visible={isBackupDialogVisible}
+        title="Código de Backup"
+        content="Copie e guarde este código em um local seguro. Você precisará dele para restaurar suas configurações."
+        extraContent={
+          <View style={styles.backupCodeContainer}>
+            <Text selectable={true} style={styles.backupCode}>
+              {backupCode}
             </Text>
-            <Text style={[styles.aboutVersion, { color: theme.colors.onSurfaceVariant }]}>
-              Versão 0.0.3
-            </Text>
-            <Text style={[styles.aboutDescription, { color: theme.colors.onSurface }]}>
-              Cole é um aplicativo para ajudar estudantes a gerenciar seu tempo de estudo de forma eficiente. Com estatísticas detalhadas e opções de timer flexíveis para otimizar sua rotina de estudos.
-            </Text>
-          </Card.Content>
-        </Card>
-      </Animated.View>
-    </ScrollView>
+          </View>
+        }
+        actions={[
+          {
+            label: 'Copiar',
+            onPress: () => {
+              // Clipboard functionality would go here
+              // Clipboard.setString(backupCode);
+              Alert.alert('Sucesso', 'Código copiado para a área de transferência!');
+            }
+          },
+          {
+            label: 'Fechar',
+            onPress: () => setIsBackupDialogVisible(false)
+          }
+        ]}
+      />
+      
+      {/* Diálogo de Restauração */}
+      <Dialog
+        visible={isRestoreDialogVisible}
+        title="Restaurar Backup"
+        content="Cole o código de backup para restaurar suas configurações."
+        inputProps={{
+          value: restoreCode,
+          onChangeText: setRestoreCode,
+          placeholder: 'Cole o código aqui',
+          multiline: true,
+          numberOfLines: 4
+        }}
+        actions={[
+          {
+            label: 'Cancelar',
+            onPress: () => {
+              setIsRestoreDialogVisible(false);
+              setRestoreCode('');
+            }
+          },
+          {
+            label: 'Restaurar',
+            onPress: restoreFromBackup
+          }
+        ]}
+      />
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 16,
-  },
   header: {
-    marginVertical: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  headerText: {
-    fontWeight: 'bold',
-  },
-  card: {
-    borderRadius: 12,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     elevation: 2,
   },
-  settingRow: {
-    flexDirection: 'column',
-    marginBottom: 8,
-  },
-  themeOptions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 16,
-  },
-  themeOption: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  card: {
+    marginBottom: 16,
     borderRadius: 12,
-    padding: 8,
-    width: 100,
-    height: 100,
+    elevation: 2,
   },
-  timerTypeContainer: {
-    marginTop: 8,
+  section: {
+    marginBottom: 20,
   },
-  radioRow: {
+  sectionTitle: {
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  settingItem: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    marginBottom: 16,
   },
-  pomodoroSettings: {
-    marginTop: 8,
+  settingLabel: {
+    fontSize: 16,
   },
   divider: {
-    marginVertical: 12,
+    height: 1,
+    marginVertical: 8,
   },
-  sliderContainer: {
+  buttonContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'space-around',
+    marginVertical: 8,
   },
-  aboutText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    textAlign: 'center',
+  button: {
+    minWidth: 120,
   },
-  aboutVersion: {
-    textAlign: 'center',
-    marginBottom: 12,
-    opacity: 0.7,
+  backupCodeContainer: {
+    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
   },
-  aboutDescription: {
-    textAlign: 'center',
-    lineHeight: 20,
+  backupCode: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 12,
+  },
+  themeSelector: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  radioItem: {
+    marginVertical: -8,
   },
 });
 
-export default SettingsScreen; 
+export default React.memo(SettingsScreen); 

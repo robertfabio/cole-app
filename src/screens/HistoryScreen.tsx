@@ -1,10 +1,11 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
+import { Text, useTheme, Surface } from 'react-native-paper';
 import { useTimer } from '../contexts/TimerContext';
 import { formatTimeDescription } from '../utils/timeFormat';
 import SessionList from '../components/SessionList';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 const HistoryScreen: React.FC = () => {
   const { studySessions } = useTimer();
@@ -24,42 +25,69 @@ const HistoryScreen: React.FC = () => {
         }
       ]}
     >
-      <View style={styles.header}>
+      <Animated.View 
+        entering={FadeIn.duration(400)}
+        style={styles.header}
+      >
         <Text 
           variant="headlineMedium" 
-          style={[styles.headerText, { color: theme.colors.primary }]}
+          style={[styles.headerText, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}
         >
           Histórico de Estudos
         </Text>
-      </View>
+      </Animated.View>
       
-      <View style={[styles.summaryContainer, { backgroundColor: theme.colors.surface }]}>
-        <Text style={[styles.summaryTitle, { color: theme.colors.primary }]}>
+      <Animated.View 
+        entering={FadeIn.duration(500).delay(100)}
+        style={[
+          styles.summaryContainer, 
+          { 
+            backgroundColor: theme.dark ? theme.colors.surfaceVariant : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }
+        ]}
+      >
+        <Text style={[styles.summaryTitle, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}>
           Resumo de Estudos
         </Text>
         <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: theme.colors.primary }]}>
-              {studySessions.length}
-            </Text>
-            <Text style={[styles.statLabel, { color: theme.colors.secondary }]}>
-              Sessões
-            </Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: theme.colors.primary }]}>
-              {formatTimeDescription(totalTime)}
-            </Text>
-            <Text style={[styles.statLabel, { color: theme.colors.secondary }]}>
-              Tempo Total
-            </Text>
-          </View>
+          <Surface style={[styles.statItemSurface, { 
+            backgroundColor: theme.dark ? 'rgba(255,255,255,0.08)' : theme.colors.primaryContainer,
+            elevation: 0
+          }]}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}>
+                {studySessions.length}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.dark ? 'rgba(255,255,255,0.8)' : theme.colors.secondary }]}>
+                Sessões
+              </Text>
+            </View>
+          </Surface>
+          
+          <Surface style={[styles.statItemSurface, { 
+            backgroundColor: theme.dark ? 'rgba(255,255,255,0.08)' : theme.colors.primaryContainer,
+            elevation: 0
+          }]}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}>
+                {formatTimeDescription(totalTime)}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.dark ? 'rgba(255,255,255,0.8)' : theme.colors.secondary }]}>
+                Tempo Total
+              </Text>
+            </View>
+          </Surface>
         </View>
-      </View>
+      </Animated.View>
       
-      <View style={styles.listContainer}>
+      <Animated.View 
+        entering={FadeIn.duration(600).delay(200)}
+        style={styles.listContainer}
+      >
         <SessionList />
-      </View>
+      </Animated.View>
     </View>
   );
 };
@@ -80,10 +108,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
     padding: 16,
-    elevation: 4,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   summaryTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 16,
   },
@@ -91,12 +123,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
   },
+  statItemSurface: {
+    borderRadius: 8,
+    marginHorizontal: 8,
+    flex: 1,
+  },
   statItem: {
     alignItems: 'center',
-    padding: 8,
+    padding: 12,
   },
   statValue: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
   },
   statLabel: {

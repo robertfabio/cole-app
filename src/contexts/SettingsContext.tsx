@@ -1,28 +1,38 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useColorScheme } from 'react-native';
 
-type Theme = 'light' | 'dark';
+type Theme = 'light' | 'dark' | 'system';
 type TimerType = 'standard' | 'pomodoro';
 
-interface Settings {
+export interface PomodoroSettings {
+  focusTime: number; // minutes
+  shortBreak: number; // minutes
+  longBreak: number; // minutes
+  sessionsBeforeLongBreak: number;
+}
+
+export interface NotificationSettings {
+  sound: boolean;
+  vibration: boolean;
+}
+
+export interface Settings {
   theme: Theme;
   timerType: TimerType;
-  pomodoroSettings: {
-    focusTime: number; // minutes
-    shortBreak: number; // minutes
-    longBreak: number; // minutes
-    sessionsBeforeLongBreak: number;
-  };
+  pomodoroSettings: PomodoroSettings;
   soundEnabled: boolean;
   notificationsEnabled: boolean;
   dailyGoal: number; // minutes
+  notifications: NotificationSettings;
 }
 
 interface SettingsContextProps {
   settings: Settings;
+  updateSettings: (newSettings: Settings) => void;
   updateTheme: (theme: Theme) => void;
   updateTimerType: (timerType: TimerType) => void;
-  updatePomodoroSettings: (settings: Settings['pomodoroSettings']) => void;
+  updatePomodoroSettings: (settings: PomodoroSettings) => void;
   toggleSound: () => void;
   toggleNotifications: () => void;
   updateDailyGoal: (minutes: number) => void;

@@ -5,6 +5,7 @@ import { useTimer } from '../contexts/TimerContext';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 import { formatTime, formatTimeDescription } from '../utils/timeFormat';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { loadAchievementProfile } from '../utils/achievementSystem';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -25,6 +26,7 @@ const StatsScreen: React.FC = () => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('week');
+  const [achievementProfile, setAchievementProfile] = useState<any>(null);
   
   // Animation values
   const barHeights = useSharedValue([0, 0, 0, 0]);
@@ -45,6 +47,16 @@ const StatsScreen: React.FC = () => {
     
     barHeights.value = withTiming(normalizedHeights as any, { duration: 1000 });
   }, [selectedPeriod, studySessions]);
+
+  // Load achievement profile for additional stats
+  useEffect(() => {
+    const loadProfile = async () => {
+      const profile = await loadAchievementProfile();
+      setAchievementProfile(profile);
+    };
+    
+    loadProfile();
+  }, []);
 
   // Get total study time
   const getTotalStudyTime = () => {
@@ -323,8 +335,6 @@ const StatsScreen: React.FC = () => {
   };
 
   // Animated style for charts
-
-  // Animated style for charts
   const chartAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: chartScale.value }],
   }));
@@ -349,7 +359,7 @@ const StatsScreen: React.FC = () => {
       <View style={styles.header}>
         <Text 
           variant="headlineMedium" 
-          style={[styles.headerText, { color: theme.colors.primary }]}
+          style={[styles.headerText, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}
         >
           Estatísticas de Estudo
         </Text>
@@ -358,16 +368,27 @@ const StatsScreen: React.FC = () => {
       {/* Summary Stats Cards */}
       <View style={styles.statsCardsContainer}>
         <Animated.View entering={FadeInLeft.duration(500).delay(100)} style={styles.statsCardWrapper}>
-          <Card style={[styles.statsCard, { backgroundColor: theme.colors.surface }]}>
+          <Card style={[styles.statsCard, { 
+            backgroundColor: theme.dark ? theme.colors.surfaceVariant : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
             <Card.Content style={styles.cardContent}>
-              <Text variant="titleMedium" style={{ color: theme.colors.secondary, fontSize: 14 }}>
+              <Text variant="titleMedium" style={{ 
+                color: theme.dark ? theme.colors.onSurfaceVariant : theme.colors.secondary, 
+                fontSize: 14,
+                fontWeight: 'bold'
+              }}>
                 Tempo Total
               </Text>
               <Text 
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 variant="headlineSmall" 
-                style={[styles.statValue, { color: theme.colors.primary }]}
+                style={[styles.statValue, { 
+                  color: theme.dark ? '#FFFFFF' : theme.colors.primary,
+                  fontSize: 20
+                }]}
               >
                 {formatTimeDescription(getTotalStudyTime())}
               </Text>
@@ -376,16 +397,27 @@ const StatsScreen: React.FC = () => {
         </Animated.View>
 
         <Animated.View entering={FadeInRight.duration(500).delay(200)} style={styles.statsCardWrapper}>
-          <Card style={[styles.statsCard, { backgroundColor: theme.colors.surface }]}>
+          <Card style={[styles.statsCard, { 
+            backgroundColor: theme.dark ? theme.colors.surfaceVariant : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
             <Card.Content style={styles.cardContent}>
-              <Text variant="titleMedium" style={{ color: theme.colors.secondary, fontSize: 14 }}>
+              <Text variant="titleMedium" style={{ 
+                color: theme.dark ? theme.colors.onSurfaceVariant : theme.colors.secondary, 
+                fontSize: 14,
+                fontWeight: 'bold'
+              }}>
                 Sessões
               </Text>
               <Text 
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 variant="headlineSmall" 
-                style={[styles.statValue, { color: theme.colors.primary }]}
+                style={[styles.statValue, { 
+                  color: theme.dark ? '#FFFFFF' : theme.colors.primary,
+                  fontSize: 20
+                }]}
               >
                 {getTotalSessionsCount()}
               </Text>
@@ -394,16 +426,27 @@ const StatsScreen: React.FC = () => {
         </Animated.View>
 
         <Animated.View entering={FadeInLeft.duration(500).delay(300)} style={styles.statsCardWrapper}>
-          <Card style={[styles.statsCard, { backgroundColor: theme.colors.surface }]}>
+          <Card style={[styles.statsCard, { 
+            backgroundColor: theme.dark ? theme.colors.surfaceVariant : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
             <Card.Content style={styles.cardContent}>
-              <Text variant="titleMedium" style={{ color: theme.colors.secondary, fontSize: 14 }}>
+              <Text variant="titleMedium" style={{ 
+                color: theme.dark ? theme.colors.onSurfaceVariant : theme.colors.secondary, 
+                fontSize: 14,
+                fontWeight: 'bold'
+              }}>
                 Média por Sessão
               </Text>
               <Text 
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 variant="headlineSmall" 
-                style={[styles.statValue, { color: theme.colors.primary }]}
+                style={[styles.statValue, { 
+                  color: theme.dark ? '#FFFFFF' : theme.colors.primary,
+                  fontSize: 20
+                }]}
               >
                 {formatTimeDescription(getAverageTime())}
               </Text>
@@ -412,18 +455,87 @@ const StatsScreen: React.FC = () => {
         </Animated.View>
 
         <Animated.View entering={FadeInRight.duration(500).delay(400)} style={styles.statsCardWrapper}>
-          <Card style={[styles.statsCard, { backgroundColor: theme.colors.surface }]}>
+          <Card style={[styles.statsCard, { 
+            backgroundColor: theme.dark ? theme.colors.surfaceVariant : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
             <Card.Content style={styles.cardContent}>
-              <Text variant="titleMedium" style={{ color: theme.colors.secondary, fontSize: 14 }}>
+              <Text variant="titleMedium" style={{ 
+                color: theme.dark ? theme.colors.onSurfaceVariant : theme.colors.secondary, 
+                fontSize: 14,
+                fontWeight: 'bold'
+              }}>
                 Sessão mais Longa
               </Text>
               <Text 
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 variant="headlineSmall" 
-                style={[styles.statValue, { color: theme.colors.primary }]}
+                style={[styles.statValue, { 
+                  color: theme.dark ? '#FFFFFF' : theme.colors.primary,
+                  fontSize: 20
+                }]}
               >
                 {formatTimeDescription(getLongestSession())}
+              </Text>
+            </Card.Content>
+          </Card>
+        </Animated.View>
+
+        <Animated.View entering={FadeInLeft.duration(500).delay(500)} style={styles.statsCardWrapper}>
+          <Card style={[styles.statsCard, { 
+            backgroundColor: theme.dark ? theme.colors.surfaceVariant : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
+            <Card.Content style={styles.cardContent}>
+              <Text variant="titleMedium" style={{ 
+                color: theme.dark ? theme.colors.onSurfaceVariant : theme.colors.secondary, 
+                fontSize: 14,
+                fontWeight: 'bold'
+              }}>
+                Sequência
+              </Text>
+              <Text 
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                variant="headlineSmall" 
+                style={[styles.statValue, { 
+                  color: theme.dark ? '#FFFFFF' : theme.colors.primary,
+                  fontSize: 20
+                }]}
+              >
+                {achievementProfile?.currentStreak || 0} dias
+              </Text>
+            </Card.Content>
+          </Card>
+        </Animated.View>
+
+        <Animated.View entering={FadeInRight.duration(500).delay(600)} style={styles.statsCardWrapper}>
+          <Card style={[styles.statsCard, { 
+            backgroundColor: theme.dark ? theme.colors.surfaceVariant : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
+            <Card.Content style={styles.cardContent}>
+              <Text variant="titleMedium" style={{ 
+                color: theme.dark ? theme.colors.onSurfaceVariant : theme.colors.secondary, 
+                fontSize: 14,
+                fontWeight: 'bold'
+              }}>
+                Sessões Agendadas
+              </Text>
+              <Text 
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                variant="headlineSmall" 
+                style={[styles.statValue, { 
+                  color: theme.dark ? '#FFFFFF' : theme.colors.primary,
+                  fontSize: 20
+                }]}
+              >
+                {achievementProfile?.scheduledSessionsCompleted || 0}
               </Text>
             </Card.Content>
           </Card>
@@ -434,7 +546,7 @@ const StatsScreen: React.FC = () => {
       <View style={styles.periodSelector}>
         <Text 
           variant="titleMedium" 
-          style={{ color: theme.colors.primary, marginRight: 10 }}
+          style={{ color: theme.dark ? '#FFFFFF' : theme.colors.primary, marginRight: 10 }}
         >
           Período:
         </Text>
@@ -448,9 +560,18 @@ const StatsScreen: React.FC = () => {
             onPress={() => setSelectedPeriod('day')}
             style={[
               styles.chip,
-              selectedPeriod === 'day' ? { backgroundColor: theme.colors.primaryContainer } : null
+              { 
+                backgroundColor: selectedPeriod === 'day' 
+                  ? theme.dark ? 'rgba(255,255,255,0.2)' : theme.colors.primaryContainer 
+                  : theme.dark ? 'rgba(255,255,255,0.08)' : theme.colors.surfaceVariant
+              }
             ]}
-            textStyle={{ color: theme.colors.primary }}
+            selectedColor={theme.dark ? '#FFFFFF' : theme.colors.primary}
+            textStyle={{ 
+              color: selectedPeriod === 'day' 
+                ? theme.dark ? '#FFFFFF' : theme.colors.onPrimaryContainer 
+                : theme.dark ? 'rgba(255,255,255,0.8)' : theme.colors.onSurfaceVariant 
+            }}
           >
             Hoje
           </Chip>
@@ -459,9 +580,18 @@ const StatsScreen: React.FC = () => {
             onPress={() => setSelectedPeriod('week')}
             style={[
               styles.chip,
-              selectedPeriod === 'week' ? { backgroundColor: theme.colors.primaryContainer } : null
+              { 
+                backgroundColor: selectedPeriod === 'week' 
+                  ? theme.dark ? 'rgba(255,255,255,0.2)' : theme.colors.primaryContainer 
+                  : theme.dark ? 'rgba(255,255,255,0.08)' : theme.colors.surfaceVariant
+              }
             ]}
-            textStyle={{ color: theme.colors.primary }}
+            selectedColor={theme.dark ? '#FFFFFF' : theme.colors.primary}
+            textStyle={{ 
+              color: selectedPeriod === 'week' 
+                ? theme.dark ? '#FFFFFF' : theme.colors.onPrimaryContainer 
+                : theme.dark ? 'rgba(255,255,255,0.8)' : theme.colors.onSurfaceVariant 
+            }}
           >
             Semana
           </Chip>
@@ -470,9 +600,18 @@ const StatsScreen: React.FC = () => {
             onPress={() => setSelectedPeriod('month')}
             style={[
               styles.chip,
-              selectedPeriod === 'month' ? { backgroundColor: theme.colors.primaryContainer } : null
+              { 
+                backgroundColor: selectedPeriod === 'month' 
+                  ? theme.dark ? 'rgba(255,255,255,0.2)' : theme.colors.primaryContainer 
+                  : theme.dark ? 'rgba(255,255,255,0.08)' : theme.colors.surfaceVariant
+              }
             ]}
-            textStyle={{ color: theme.colors.primary }}
+            selectedColor={theme.dark ? '#FFFFFF' : theme.colors.primary}
+            textStyle={{ 
+              color: selectedPeriod === 'month' 
+                ? theme.dark ? '#FFFFFF' : theme.colors.onPrimaryContainer 
+                : theme.dark ? 'rgba(255,255,255,0.8)' : theme.colors.onSurfaceVariant 
+            }}
           >
             Mês
           </Chip>
@@ -481,9 +620,18 @@ const StatsScreen: React.FC = () => {
             onPress={() => setSelectedPeriod('year')}
             style={[
               styles.chip,
-              selectedPeriod === 'year' ? { backgroundColor: theme.colors.primaryContainer } : null
+              { 
+                backgroundColor: selectedPeriod === 'year' 
+                  ? theme.dark ? 'rgba(255,255,255,0.2)' : theme.colors.primaryContainer 
+                  : theme.dark ? 'rgba(255,255,255,0.08)' : theme.colors.surfaceVariant
+              }
             ]}
-            textStyle={{ color: theme.colors.primary }}
+            selectedColor={theme.dark ? '#FFFFFF' : theme.colors.primary}
+            textStyle={{ 
+              color: selectedPeriod === 'year' 
+                ? theme.dark ? '#FFFFFF' : theme.colors.onPrimaryContainer 
+                : theme.dark ? 'rgba(255,255,255,0.8)' : theme.colors.onSurfaceVariant 
+            }}
           >
             Ano
           </Chip>
@@ -492,19 +640,23 @@ const StatsScreen: React.FC = () => {
 
       {/* Chart Section - Gráfico de Linha */}
       <Animated.View style={chartAnimatedStyle}>
-        <Card style={[styles.chartCard, { backgroundColor: theme.colors.surface }]}>
+        <Card style={[styles.chartCard, { 
+          backgroundColor: theme.dark ? theme.colors.surface : theme.colors.surface,
+          borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+          borderWidth: theme.dark ? 1 : 0,
+        }]}>
           <Card.Content style={styles.chartContent}>
             <View style={styles.chartHeaderRow}>
               <Text 
                 variant="titleMedium" 
-                style={[styles.chartTitle, { color: theme.colors.primary }]}
+                style={[styles.chartTitle, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}
               >
                 Horas de Estudo
               </Text>
               <IconButton 
                 icon="information-outline" 
                 size={20} 
-                iconColor={theme.colors.primary}
+                iconColor={theme.dark ? '#FFFFFF' : theme.colors.primary}
                 onPress={() => alert('Este gráfico mostra suas horas de estudo ao longo do tempo selecionado.')}
               />
             </View>
@@ -522,15 +674,19 @@ const StatsScreen: React.FC = () => {
                     backgroundGradientFrom: theme.colors.surface,
                     backgroundGradientTo: theme.colors.surface,
                     decimalPlaces: 1,
-                    color: () => theme.colors.primary,
-                    labelColor: () => theme.colors.secondary,
+                    color: (opacity = 1) => theme.dark 
+                      ? `rgba(255, 255, 255, ${opacity})` 
+                      : theme.colors.primary,
+                    labelColor: (opacity = 1) => theme.dark 
+                      ? `rgba(255, 255, 255, ${opacity})` 
+                      : theme.colors.secondary,
                     style: {
                       borderRadius: 16,
                     },
                     propsForDots: {
-                      r: '4',
+                      r: '5',
                       strokeWidth: '2',
-                      stroke: theme.colors.tertiary,
+                      stroke: theme.dark ? '#FFFFFF' : theme.colors.tertiary,
                     },
                     formatYLabel: (value) => value.toString(),
                     horizontalLabelRotation: 0,
@@ -548,7 +704,7 @@ const StatsScreen: React.FC = () => {
               </View>
             ) : (
               <View style={styles.emptyChartContainer}>
-                <Text style={{ color: theme.colors.secondary }}>
+                <Text style={{ color: theme.dark ? 'rgba(255,255,255,0.7)' : theme.colors.secondary }}>
                   Nenhuma sessão de estudo registrada ainda!
                 </Text>
               </View>
@@ -560,19 +716,23 @@ const StatsScreen: React.FC = () => {
       {/* Distribuição por Dia da Semana - Gráfico de Pizza */}
       {studySessions.length > 0 && (
         <Animated.View entering={FadeInLeft.duration(500).delay(500)}>
-          <Card style={[styles.chartCard, { backgroundColor: theme.colors.surface }]}>
+          <Card style={[styles.chartCard, { 
+            backgroundColor: theme.dark ? theme.colors.surface : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
             <Card.Content style={styles.chartContent}>
               <View style={styles.chartHeaderRow}>
                 <Text 
                   variant="titleMedium" 
-                  style={[styles.chartTitle, { color: theme.colors.primary }]}
+                  style={[styles.chartTitle, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}
                 >
                   Distribuição por Dia da Semana
                 </Text>
                 <IconButton 
                   icon="information-outline" 
                   size={20} 
-                  iconColor={theme.colors.primary}
+                  iconColor={theme.dark ? '#FFFFFF' : theme.colors.primary}
                   onPress={() => alert('Este gráfico mostra como seu tempo de estudo está distribuído pelos dias da semana.')}
                 />
               </View>
@@ -586,8 +746,12 @@ const StatsScreen: React.FC = () => {
                     backgroundColor: theme.colors.surface,
                     backgroundGradientFrom: theme.colors.surface,
                     backgroundGradientTo: theme.colors.surface,
-                    color: () => theme.colors.primary,
-                    labelColor: () => theme.colors.secondary,
+                    color: (opacity = 1) => theme.dark 
+                      ? `rgba(255, 255, 255, ${opacity})` 
+                      : theme.colors.primary,
+                    labelColor: (opacity = 1) => theme.dark 
+                      ? `rgba(255, 255, 255, ${opacity})` 
+                      : theme.colors.secondary,
                   }}
                   accessor="value"
                   backgroundColor="transparent"
@@ -605,19 +769,23 @@ const StatsScreen: React.FC = () => {
       {/* Duração Média por Período - Gráfico de Barras */}
       {studySessions.length > 0 && (
         <Animated.View entering={FadeInRight.duration(500).delay(600)}>
-          <Card style={[styles.chartCard, { backgroundColor: theme.colors.surface }]}>
+          <Card style={[styles.chartCard, { 
+            backgroundColor: theme.dark ? theme.colors.surface : theme.colors.surface,
+            borderColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderWidth: theme.dark ? 1 : 0,
+          }]}>
             <Card.Content style={styles.chartContent}>
               <View style={styles.chartHeaderRow}>
                 <Text 
                   variant="titleMedium" 
-                  style={[styles.chartTitle, { color: theme.colors.primary }]}
+                  style={[styles.chartTitle, { color: theme.dark ? '#FFFFFF' : theme.colors.primary }]}
                 >
                   Duração Média por Período
                 </Text>
                 <IconButton 
                   icon="information-outline" 
                   size={20} 
-                  iconColor={theme.colors.primary}
+                  iconColor={theme.dark ? '#FFFFFF' : theme.colors.primary}
                   onPress={() => alert('Este gráfico mostra a duração média das suas sessões de estudo em diferentes períodos do dia.')}
                 />
               </View>
@@ -628,13 +796,18 @@ const StatsScreen: React.FC = () => {
                   width={CHART_WIDTH}
                   height={220}
                   yAxisSuffix="min"
+                  yAxisLabel=""
                   chartConfig={{
                     backgroundColor: theme.colors.surface,
                     backgroundGradientFrom: theme.colors.surface,
                     backgroundGradientTo: theme.colors.surface,
                     decimalPlaces: 0,
-                    color: () => theme.colors.primary,
-                    labelColor: () => theme.colors.secondary,
+                    color: (opacity = 1) => theme.dark 
+                      ? `rgba(255, 255, 255, ${opacity})` 
+                      : theme.colors.primary,
+                    labelColor: (opacity = 1) => theme.dark 
+                      ? `rgba(255, 255, 255, ${opacity})` 
+                      : theme.colors.secondary,
                     style: {
                       borderRadius: 16,
                     },
@@ -679,9 +852,13 @@ const styles = StyleSheet.create({
   },
   statsCard: {
     borderRadius: 12,
-    elevation: 2,
+    elevation: 3,
     height: '100%',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   cardContent: {
     padding: 16,
@@ -707,7 +884,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 8,
     marginBottom: 16,
-    elevation: 2,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   chartContent: {
     padding: 16,

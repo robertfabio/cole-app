@@ -1,98 +1,145 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, useTheme, Surface } from 'react-native-paper';
+import React, { useState } from 'react';
+import { View, StyleSheet, Modal } from 'react-native';
+import { useTheme, Text, IconButton } from 'react-native-paper';
+import { useTimer } from '../contexts/TimerContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TimerDisplay from '../components/TimerDisplay';
 import TimerControls from '../components/TimerControls';
+import { useNavigation } from '@react-navigation/native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import SessionSave from '../components/SessionSave';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TimerScreen: React.FC = () => {
   const theme = useTheme();
+  const { totalStudyTime, isRunning } = useTimer();
   const insets = useSafeAreaInsets();
-
-  // Estilos para os textos do cabeçalho
-  const titleStyle = {
-    ...styles.headerText,
-    color: theme.colors.primary,
-    fontFamily: 'Montserrat-Thin',
-    letterSpacing: 1.2,
-    fontSize: 38,
+  const navigation = useNavigation();
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  
+  // Only show save button if timer has run for some time
+  const canSave = Math.abs(totalStudyTime) > 0;
+  
+  const handleFullScreen = () => {
+    navigation.navigate('FullscreenTimer' as never);
   };
-
-  const subtitleStyle = {
-    ...styles.subHeaderText,
-    color: theme.colors.secondary,
+  
+  const handleOpenSaveModal = () => {
+    setShowSaveModal(true);
   };
-
+  
+  const handleCloseSaveModal = () => {
+    setShowSaveModal(false);
+  };
+  
   return (
-    <ScrollView 
-      contentContainerStyle={[
-        styles.container, 
+    <View
+      style={[
+        styles.container,
         { 
           backgroundColor: theme.colors.background,
-          paddingTop: Math.max(20, insets.top),
-          paddingBottom: Math.max(20, insets.bottom)
+          paddingTop: insets.top,
+          paddingBottom: Math.max(16, insets.bottom)
         }
       ]}
-      showsVerticalScrollIndicator={false}
-      bounces={false}
-      overScrollMode="never"
     >
-      <View style={styles.header}>
-        <Text style={titleStyle}>
-          Cole
-        </Text>
-        <Text 
-          variant="titleMedium"
-          style={subtitleStyle}
+      <Animated.View 
+        entering={FadeIn.duration(500)}
+        style={styles.header}
+      >
+        <Text
+          variant="headlineMedium"
+          style={[styles.title, { color: theme.colors.primary }]}
         >
-          Cronômetro de Estudos
+          Cronômetro
         </Text>
-      </View>
+        
+        <IconButton
+          icon="fullscreen"
+          size={28}
+          onPress={handleFullScreen}
+        />
+      </Animated.View>
       
-      <Surface style={[styles.timerContainer, { 
-        backgroundColor: theme.colors.surface,
-        shadowColor: theme.colors.primary,
-      }]}>
-        <TimerDisplay />
-        <TimerControls />
-        <SessionSave />
-      </Surface>
-    </ScrollView>
+      <TimerDisplay />
+      
+      <TimerControls />
+      
+      {canSave && !isRunning && (
+        <View style={styles.saveButtonContainer}>
+          <IconButton
+            icon="content-save"
+            mode="contained"
+            size={24}
+            onPress={handleOpenSaveModal}
+            style={[
+              styles.saveButton,
+              { backgroundColor: theme.colors.secondary }
+            ]}
+            iconColor={theme.colors.onSecondary}
+          />
+        </View>
+      )}
+      
+      <Modal
+        visible={showSaveModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCloseSaveModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[
+            styles.modalContent,
+            { backgroundColor: theme.colors.surface }
+          ]}>
+            <SessionSave onClose={handleCloseSaveModal} />
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
+    flex: 1,
     padding: 16,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
-    paddingVertical: 16,
+    marginBottom: 16,
   },
-  headerText: {
+  title: {
     fontWeight: 'bold',
-    textAlign: 'center',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
-    textShadowColor: 'rgba(0,0,0,0.1)',
   },
-  subHeaderText: {
-    marginTop: 8,
-    textAlign: 'center',
+  saveButtonContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    zIndex: 10,
   },
-  timerContainer: {
-    borderRadius: 24,
-    padding: 24,
-    elevation: 2,
-    marginBottom: 24,
+  saveButton: {
+    borderRadius: 30,
+    elevation: 4,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    backdropFilter: 'blur(10px)',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    width: '85%',
+    maxWidth: 350,
+    borderRadius: 16,
+    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
 });
 

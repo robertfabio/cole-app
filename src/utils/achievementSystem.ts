@@ -419,37 +419,37 @@ const isWeekend = (date: Date): boolean => {
 };
 
 // Lista de feriados nacionais brasileiros (YYYY-MM-DD)
-const brazilianHolidays2023_2024 = [
-  '2023-01-01', // Ano Novo
-  '2023-02-20', // Carnaval
-  '2023-02-21', // Carnaval
-  '2023-04-07', // Sexta-feira Santa
-  '2023-04-21', // Tiradentes
-  '2023-05-01', // Dia do Trabalho
-  '2023-06-08', // Corpus Christi
-  '2023-09-07', // Independência
-  '2023-10-12', // Nossa Senhora Aparecida
-  '2023-11-02', // Finados
-  '2023-11-15', // Proclamação da República
-  '2023-12-25', // Natal
-  '2024-01-01', // Ano Novo
-  '2024-02-12', // Carnaval
-  '2024-02-13', // Carnaval
-  '2024-03-29', // Sexta-feira Santa
-  '2024-04-21', // Tiradentes
-  '2024-05-01', // Dia do Trabalho
-  '2024-05-30', // Corpus Christi
-  '2024-09-07', // Independência
-  '2024-10-12', // Nossa Senhora Aparecida
-  '2024-11-02', // Finados
-  '2024-11-15', // Proclamação da República
-  '2024-12-25'  // Natal
+const brazilianHolidays2025_2026 = [
+  '2025-01-01', // Ano Novo
+  '2025-02-20', // Carnaval
+  '2025-02-21', // Carnaval
+  '2025-04-07', // Sexta-feira Santa
+  '2025-04-21', // Tiradentes
+  '2025-05-01', // Dia do Trabalho
+  '2025-06-08', // Corpus Christi
+  '2025-09-07', // Independência
+  '2025-10-12', // Nossa Senhora Aparecida
+  '2025-11-02', // Finados
+  '2025-11-15', // Proclamação da República
+  '2025-12-25', // Natal
+  '2026-01-01', // Ano Novo
+  '2026-02-12', // Carnaval
+  '2026-02-13', // Carnaval
+  '2026-03-29', // Sexta-feira Santa
+  '2026-04-21', // Tiradentes
+  '2026-05-01', // Dia do Trabalho
+  '2026-05-30', // Corpus Christi
+  '2026-09-07', // Independência
+  '2026-10-12', // Nossa Senhora Aparecida
+  '2026-11-02', // Finados
+  '2026-11-15', // Proclamação da República
+  '2026-12-25'  // Natal
 ];
 
 // Verificar se uma data é feriado
 const isHoliday = (date: Date): boolean => {
   const dateStr = date.toISOString().split('T')[0];
-  return brazilianHolidays2023_2024.includes(dateStr);
+  return brazilianHolidays2025_2026.includes(dateStr);
 };
 
 // Verificar e atualizar conquistas com base em nova sessão

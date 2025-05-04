@@ -115,6 +115,7 @@ Quando chegar o horário agendado, você poderá ver a próxima sessão na tela 
 - React Native
 - Expo
 - React Navigation
+<<<<<<< HEAD
 - React Native Paper (UI)
 - React Native Reanimated (Animações)
 - AsyncStorage (Persistência local)
@@ -134,3 +135,7 @@ cole-app/
 ├── app.json            # Configuração do Expo
 └── package.json        # Dependências do projeto
 ``` 
+=======
+- React Native Paper (Interface de usuário)
+- AsyncStorage para persistência de dados
+>>>>>>> 9bc60f830846aaa03b65cca7dfb539cddd00c2b4
